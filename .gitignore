@@ -1,0 +1,25 @@
+# Python
+backend/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Base de datos local y secretos
+*.db
+.env
+!.env.example
+
+# Node
+node_modules/
+.next/
+dist/
+
+# Editores / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Metadata de build de setuptools
+*.egg-info/
