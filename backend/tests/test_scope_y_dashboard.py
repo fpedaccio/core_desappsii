@@ -9,48 +9,83 @@ from __future__ import annotations
 
 import pytest
 
+from tests.conftest import USER_PASSWORD
+
 pytestmark = pytest.mark.asyncio
 
 
 # ----------------------------------------------------------------------
 # Login
 # ----------------------------------------------------------------------
-async def test_login_devuelve_is_admin_solo_para_core(client, auth):
+async def test_is_admin_sale_del_modulo_de_la_persona(client):
     for module, expected in [("atencion-ciudadana", False), ("obras", False), ("core", True)]:
         response = await client.post(
             "/api/v1/auth/login",
-            json={"module": module, "secret": "test-secret-para-los-modulos"},
+            json={"email": f"{module}@munitest.com", "password": USER_PASSWORD},
         )
         assert response.json()["isAdmin"] is expected
 
 
-async def test_secret_incorrecto_da_401(client):
+async def test_contrasena_incorrecta_da_401(client):
     response = await client.post(
-        "/api/v1/auth/login", json={"module": "obras", "secret": "mal"}
+        "/api/v1/auth/login", json={"email": "obras@munitest.com", "password": "mal"}
     )
     assert response.status_code == 401
     assert response.json()["code"] == "INVALID_CREDENTIALS"
 
 
-async def test_modulo_inexistente_da_el_mismo_error_que_secret_malo(client):
-    """No se filtra si el modulo existe o no."""
+async def test_cuenta_inexistente_da_el_mismo_error_que_contrasena_mala(client):
+    """No se filtra si el email existe o no."""
     inexistente = await client.post(
-        "/api/v1/auth/login", json={"module": "no-existe", "secret": "x"}
+        "/api/v1/auth/login", json={"email": "nadie@munitest.com", "password": "x"}
     )
-    mal_secret = await client.post(
-        "/api/v1/auth/login", json={"module": "obras", "secret": "x"}
+    mala = await client.post(
+        "/api/v1/auth/login", json={"email": "obras@munitest.com", "password": "x"}
     )
-    assert inexistente.status_code == mal_secret.status_code == 401
-    assert inexistente.json()["code"] == mal_secret.json()["code"]
+    assert inexistente.status_code == mala.status_code == 401
+    assert inexistente.json()["code"] == mala.json()["code"]
 
 
-async def test_me_devuelve_la_identidad(client, auth):
+async def test_cinco_intentos_fallidos_desactivan_la_cuenta(client):
+    for _ in range(5):
+        await client.post(
+            "/api/v1/auth/login", json={"email": "obras@munitest.com", "password": "mal"}
+        )
+
+    con_la_correcta = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "obras@munitest.com", "password": USER_PASSWORD},
+    )
+    assert con_la_correcta.status_code == 403
+    assert con_la_correcta.json()["code"] == "ACCOUNT_INACTIVE"
+
+
+async def test_me_devuelve_la_persona_y_su_modulo(client, auth):
     response = await client.get("/api/v1/auth/me", headers=await auth("obras"))
     assert response.json() == {
         "module": "obras",
         "displayName": "Obras Publicas",
         "isAdmin": False,
+        "kind": "user",
+        "email": "obras@munitest.com",
+        "name": "Persona de obras",
     }
+
+
+async def test_el_token_de_maquina_no_es_una_persona(client, machine_auth):
+    response = await client.get("/api/v1/auth/me", headers=await machine_auth("obras"))
+    body = response.json()
+    assert body["kind"] == "module"
+    assert body["email"] is None
+    assert body["module"] == "obras"
+
+
+async def test_el_backend_de_un_modulo_puede_publicar(client, machine_auth, make_envelope):
+    """El camino real de publicacion: token de maquina desde el backend."""
+    headers = await machine_auth("atencion-ciudadana")
+    response = await client.post("/api/v1/events", json=make_envelope(), headers=headers)
+    assert response.status_code == 202
+    assert response.json()["routedTo"] == ["obras"]
 
 
 # ----------------------------------------------------------------------
@@ -155,17 +190,13 @@ async def test_el_dashboard_cuenta_las_entregas_recibidas(client, auth, make_env
 
 async def test_un_modulo_no_puede_pedir_el_dashboard_de_otro(client, auth):
     obras = await auth("obras")
-    response = await client.get(
-        "/api/v1/dashboard/modules/atencion-ciudadana", headers=obras
-    )
+    response = await client.get("/api/v1/dashboard/modules/atencion-ciudadana", headers=obras)
     assert response.status_code == 403
 
 
 async def test_el_admin_puede_pedir_el_dashboard_de_cualquiera(client, auth):
     admin = await auth("core")
-    response = await client.get(
-        "/api/v1/dashboard/modules/atencion-ciudadana", headers=admin
-    )
+    response = await client.get("/api/v1/dashboard/modules/atencion-ciudadana", headers=admin)
     assert response.status_code == 200
     assert response.json()["module"] == "atencion-ciudadana"
 
@@ -221,9 +252,7 @@ async def test_alerta_cuando_aparece_un_tipo_sin_declarar(client, auth, make_env
 
     admin = await auth("core")
     alerts = (await client.get("/api/v1/dashboard/integration-alerts", headers=admin)).json()
-    assert any(
-        a["kind"] == "UNDECLARED_TYPE" and a["eventType"] == "ticketCreatd" for a in alerts
-    )
+    assert any(a["kind"] == "UNDECLARED_TYPE" and a["eventType"] == "ticketCreatd" for a in alerts)
 
 
 async def test_alerta_de_nombres_parecidos_detecta_el_typo(client, auth, make_envelope):

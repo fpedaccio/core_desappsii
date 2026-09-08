@@ -23,6 +23,7 @@ from app.models.registry import (
     Publication,
     Subscription,
 )
+from app.models.users import User
 
 __all__ = [
     "Base",
@@ -40,4 +41,5 @@ __all__ = [
     "RetryMode",
     "RetryResult",
     "Subscription",
+    "User",
 ]

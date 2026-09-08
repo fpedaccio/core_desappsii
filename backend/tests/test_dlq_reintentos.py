@@ -251,9 +251,7 @@ async def test_el_reintento_manual_republica_en_la_cola_del_destino(services):
     await services["hub"].ingest(envelope)
     await services["session"].flush()
     for _ in range(4):
-        dead_letter = await services["delivery"].handle_dlq_message(
-            _rejection(envelope, attempt=1)
-        )
+        dead_letter = await services["delivery"].handle_dlq_message(_rejection(envelope, attempt=1))
     await services["session"].flush()
     services["broker"].reset()
 
@@ -269,9 +267,7 @@ async def test_el_reintento_manual_reinicia_el_contador(services):
     await services["hub"].ingest(envelope)
     await services["session"].flush()
     for _ in range(4):
-        dead_letter = await services["delivery"].handle_dlq_message(
-            _rejection(envelope, attempt=1)
-        )
+        dead_letter = await services["delivery"].handle_dlq_message(_rejection(envelope, attempt=1))
     await services["session"].flush()
 
     await services["delivery"].retry_dead_letter(dead_letter.id)
@@ -308,9 +304,7 @@ async def test_descartar_marca_la_entrega_como_descartada(services):
     await services["hub"].ingest(envelope)
     await services["session"].flush()
     for _ in range(4):
-        dead_letter = await services["delivery"].handle_dlq_message(
-            _rejection(envelope, attempt=1)
-        )
+        dead_letter = await services["delivery"].handle_dlq_message(_rejection(envelope, attempt=1))
     await services["session"].flush()
 
     await services["delivery"].discard_dead_letter(dead_letter.id, reason="Prueba del equipo 2")

@@ -36,7 +36,9 @@ class ModuleAccount(Base, TimestampMixin):
     description: Mapped[str] = mapped_column(Text, default="")
     contact_email: Mapped[str | None] = mapped_column(String(255), default=None)
 
-    # Credencial para el dashboard y para publicar. Solo se guarda el hash.
+    # Credencial **de maquina**, solo para publicar eventos: vive en la config
+    # del backend del equipo. Las personas entran al dashboard con su propio
+    # usuario, asi que rotar este secret no le corta el acceso a nadie.
     secret_hash: Mapped[str | None] = mapped_column(String(64), default=None)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -47,6 +49,9 @@ class ModuleAccount(Base, TimestampMixin):
 
     subscriptions: Mapped[list[Subscription]] = relationship(
         back_populates="module", cascade="all, delete-orphan", lazy="selectin"
+    )
+    users: Mapped[list[User]] = relationship(  # noqa: F821
+        back_populates="module", cascade="all, delete-orphan"
     )
 
     @property

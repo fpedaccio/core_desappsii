@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import joinedload
 
 from app.models.registry import EventType, ModuleAccount, Publication, Subscription
+from app.models.users import User
 from app.repositories.base import BaseRepository, Page
 
 
@@ -173,3 +174,47 @@ class PublicationRepository(BaseRepository[Publication]):
 
     async def find_pair(self, module_id: uuid.UUID, event_type_id: uuid.UUID) -> Publication | None:
         return await self.find_one(module_id=module_id, event_type_id=event_type_id)
+
+
+class UserRepository(BaseRepository[User]):
+    model = User
+
+    def _loaded(self):
+        return select(User).options(joinedload(User.module))
+
+    async def get_by_email(self, email: str) -> User | None:
+        stmt = self._loaded().where(User.email == email.strip().lower())
+        return (await self.session.execute(stmt)).scalars().first()
+
+    async def get_loaded(self, user_id: uuid.UUID) -> User | None:
+        stmt = self._loaded().where(User.id == user_id)
+        return (await self.session.execute(stmt)).scalars().first()
+
+    async def list_for_module(self, module_id: uuid.UUID) -> list[User]:
+        stmt = self._loaded().where(User.module_id == module_id).order_by(User.email)
+        return list((await self.session.execute(stmt)).scalars().unique().all())
+
+    async def list_all(self) -> list[User]:  # type: ignore[override]
+        stmt = self._loaded().order_by(User.module_id, User.email)
+        return list((await self.session.execute(stmt)).scalars().unique().all())
+
+    async def count_active_in_module(self, module_id: uuid.UUID) -> int:
+        """Se usa para no dejar a un equipo sin ninguna cuenta con la que entrar."""
+        stmt = (
+            select(func.count())
+            .select_from(User)
+            .where(User.module_id == module_id, User.active.is_(True))
+        )
+        return int((await self.session.execute(stmt)).scalar_one())
+
+    async def record_failed_login(self, user: User, *, max_attempts: int) -> None:
+        """Suma un intento fallido y **lo confirma en la base**.
+
+        Tiene que commitear aca: el login termina levantando una excepcion, y la
+        dependencia de sesion hace rollback ante cualquier error, asi que el
+        contador se perderia y el bloqueo por intentos no serviria de nada.
+        """
+        user.failed_login_attempts += 1
+        if user.failed_login_attempts >= max_attempts:
+            user.active = False
+        await self.session.commit()

@@ -47,9 +47,19 @@ Los listados paginados devuelven siempre:
 
 ## 1. Login
 
+Hay **dos credenciales distintas** y conviene tener clara la diferencia:
+
+| | Quién la usa | Para qué |
+|---|---|---|
+| **Email + contraseña** | Las personas de cada equipo | Entrar al dashboard |
+| **Secret de módulo** | El backend del equipo | Publicar eventos |
+
+**Al frontend le importa solo la primera.** La segunda vive en la configuración
+del backend de cada equipo y ninguna persona la usa.
+
 ```http
 POST /api/v1/auth/login
-{ "module": "obras", "secret": "..." }
+{ "email": "ana@obras.uade.edu.ar", "password": "..." }
 ```
 
 ```json
@@ -59,28 +69,70 @@ POST /api/v1/auth/login
   "expiresIn": 900,
   "module": "obras",
   "displayName": "Obras Publicas e Infraestructura",
-  "isAdmin": false
+  "isAdmin": false,
+  "kind": "user",
+  "actor": "ana@obras.uade.edu.ar"
 }
 ```
 
-**`isAdmin` es la bifurcación principal de la UI.** Solo el módulo `core`
-(equipo 9) lo tiene:
+La persona queda atada a **un** módulo, y de ahí sale qué datos ve. No hay roles
+ni permisos: el único privilegio es `isAdmin`.
+
+**`isAdmin` es la bifurcación principal de la UI.** Solo lo tienen las personas
+del módulo `core` (equipo 9):
 
 | | `isAdmin: false` (los 8 equipos) | `isAdmin: true` (equipo 9) |
 |---|---|---|
 | Dashboard | `GET /dashboard` — solo lo suyo | `GET /dashboard/global` — el hub completo |
-| Eventos | solo los que publicó o recibió | todos |
-| DLQ | las que lo involucran | todas, y puede reintentar/descartar |
+| Eventos | solo los que publicó o recibió su módulo | todos |
+| DLQ | las que involucran a su módulo | todas, y puede reintentar/descartar |
 | Módulos | los ve, no los edita | alta, baja, rotar secrets |
+| Cuentas | las de su equipo | las de todos |
 
-El token dura 15 minutos y **no hay refresh**: cuando expira se vuelve a pedir con
-`POST /auth/login`. Es un panel interno, así que mandar al login de nuevo es una
-salida aceptable.
+El token dura 15 minutos y **no hay refresh**: cuando expira se vuelve a pedir
+con `POST /auth/login`. Es un panel interno, así que mandar al login de nuevo es
+una salida aceptable.
 
-`GET /api/v1/auth/me` devuelve `{module, displayName, isAdmin}` — útil para
-restaurar la sesión al refrescar la página.
+`GET /api/v1/auth/me` devuelve `{module, displayName, isAdmin, kind, email, name}`
+— útil para restaurar la sesión al refrescar la página.
+
+### Errores del login
+
+| Código | `code` | Qué mostrar |
+|---|---|---|
+| `401` | `INVALID_CREDENTIALS` | "Email o contraseña incorrectos." No dice cuál de los dos, a propósito. |
+| `403` | `ACCOUNT_INACTIVE` | La cuenta está desactivada. **Tras 5 intentos fallidos se desactiva sola**; la reactiva cualquier integrante del equipo. |
+| `403` | `MODULE_INACTIVE` | El módulo entero está dado de baja. Eso lo arregla el equipo 9. |
 
 ---
+
+## 1b. Cuentas del dashboard
+
+Cada equipo administra las de sus integrantes, sin depender del equipo 9.
+
+```http
+GET    /api/v1/users                      las de mi equipo (todas si admin)
+POST   /api/v1/users                      { email, fullName, password }
+PATCH  /api/v1/users/{id}                 { fullName?, active? }
+PUT    /api/v1/users/{id}/password        { password }
+DELETE /api/v1/users/{id}
+```
+
+```json
+{
+  "id": "...", "email": "ana@obras.uade.edu.ar", "fullName": "Ana Perez",
+  "moduleName": "obras", "active": true,
+  "lastLoginAt": "2026-09-08T13:00:00Z", "createdAt": "..."
+}
+```
+
+Dos cosas a tener en cuenta en la UI:
+
+- **No se puede desactivar ni eliminar la única cuenta activa de un equipo** —
+  devuelve `409`. Si no, el equipo se queda sin forma de volver a entrar.
+  Conviene deshabilitar el botón cuando la lista tiene un solo activo.
+- La contraseña necesita **8 caracteres y mezclar letras con números**. Validalo
+  en el cliente para no depender del `422`.
 
 ## 2. Dashboard de un módulo
 
@@ -394,13 +446,18 @@ en rojo — ámbar con la explicación.
 
 ## Notas de implementación
 
+**Publicar eventos desde el dashboard es opcional.** El camino real es que el
+backend de cada equipo publique con su token de máquina
+(`POST /auth/module-token`). Si querés un formulario para probar a mano, el token
+de una persona también sirve, y el `sourceModule` tiene que ser el de su módulo.
+
 **El scope de datos lo aplica el backend.** Un módulo que pida
 `GET /events?sourceModule=rentas` recibe solo lo suyo igual. No hace falta
 filtrar en el cliente por seguridad, pero sí conviene no mostrar controles que
 van a dar 403.
 
 **Qué esconder con `isAdmin: false`:** las acciones de DLQ, el alta y edición de
-módulos, `POST /topology/apply` y el link al dashboard global. Todo eso responde
+módulos, las cuentas de otros equipos, `POST /topology/apply` y el link al dashboard global. Todo eso responde
 403 con un mensaje claro, así que si algo se escapa no rompe nada.
 
 **Las fechas son ISO-8601.** `occurredAt` conserva el offset del módulo origen

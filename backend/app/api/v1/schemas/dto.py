@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import Field
+from pydantic import EmailStr, Field
 
 from app.api.v1.schemas.common import CamelModel
 from app.models.events import (
@@ -26,6 +26,7 @@ from app.models.events import (
     RetryResult,
 )
 from app.models.registry import EventType, ModuleAccount, Publication, Subscription
+from app.models.users import User as DashboardUser
 from app.services.event_hub_service import IngestResult
 
 SCHEMA_EXAMPLE: dict[str, Any] = {
@@ -44,8 +45,20 @@ SCHEMA_EXAMPLE: dict[str, Any] = {
 # Autenticacion
 # ----------------------------------------------------------------------
 class LoginRequest(CamelModel):
+    """Login de una persona en el dashboard."""
+
+    email: EmailStr = Field(examples=["ana@obras.uade.edu.ar"])
+    password: str = Field(min_length=1)
+
+
+class ModuleTokenRequest(CamelModel):
+    """Token para el backend de un modulo, para publicar eventos.
+
+    El secret vive en la config del equipo, no lo usa ninguna persona.
+    """
+
     module: str = Field(examples=["obras"], description="Nombre tecnico del modulo")
-    secret: str = Field(min_length=1, description="El secret que te dio el equipo 9")
+    secret: str = Field(min_length=1, description="El secret de maquina del modulo")
 
 
 class TokenResponse(CamelModel):
@@ -57,12 +70,69 @@ class TokenResponse(CamelModel):
     is_admin: bool = Field(
         description="Solo el equipo 9. Habilita ver el trafico de todos los modulos."
     )
+    kind: str = Field(
+        description="'user' si entro una persona, 'module' si es un backend.",
+        examples=["user"],
+    )
+    actor: str = Field(description="Lo que queda en la auditoria: el email, o module:<nombre>.")
 
 
 class MeResponse(CamelModel):
     module: str
     display_name: str
     is_admin: bool
+    kind: str
+    email: str | None = None
+    name: str | None = None
+
+
+# ----------------------------------------------------------------------
+# Personas del dashboard
+# ----------------------------------------------------------------------
+class UserResponse(CamelModel):
+    id: uuid.UUID
+    email: str
+    full_name: str
+    module_name: str
+    active: bool
+    last_login_at: datetime | None
+    created_at: datetime
+
+    @classmethod
+    def of(cls, user: DashboardUser) -> UserResponse:
+        return cls(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            module_name=user.module.name,
+            active=user.active,
+            last_login_at=user.last_login_at,
+            created_at=user.created_at,
+        )
+
+
+class UserCreate(CamelModel):
+    email: EmailStr = Field(examples=["ana@obras.uade.edu.ar"])
+    full_name: str = Field(min_length=2, max_length=180, examples=["Ana Perez"])
+    password: str = Field(
+        min_length=8, description="Al menos 8 caracteres, combinando letras y numeros."
+    )
+    module: str | None = Field(
+        default=None,
+        description=(
+            "Solo el equipo 9 puede crear cuentas en otro modulo. Si se omite, se "
+            "usa el modulo de quien esta autenticado."
+        ),
+    )
+
+
+class UserUpdate(CamelModel):
+    full_name: str | None = Field(default=None, min_length=2, max_length=180)
+    active: bool | None = None
+
+
+class PasswordUpdate(CamelModel):
+    password: str = Field(min_length=8)
 
 
 # ----------------------------------------------------------------------

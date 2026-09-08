@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from tests.conftest import MODULE_SECRET, USER_PASSWORD
+
 pytestmark = pytest.mark.asyncio
 
 
@@ -74,9 +76,7 @@ async def test_pausar_una_suscripcion_deja_de_entregar(client, auth, make_envelo
     subscriptions = (await client.get("/api/v1/subscriptions", headers=obras)).json()
     subscription_id = subscriptions[0]["id"]
 
-    await client.post(
-        f"/api/v1/subscriptions/{subscription_id}/toggle?active=false", headers=obras
-    )
+    await client.post(f"/api/v1/subscriptions/{subscription_id}/toggle?active=false", headers=obras)
 
     ac = await auth("atencion-ciudadana")
     response = await client.post("/api/v1/events", json=make_envelope(), headers=ac)
@@ -87,12 +87,8 @@ async def test_pausar_una_suscripcion_deja_de_entregar(client, auth, make_envelo
 async def test_reactivar_vuelve_a_entregar(client, auth, make_envelope):
     obras = await auth("obras")
     subscription_id = (await client.get("/api/v1/subscriptions", headers=obras)).json()[0]["id"]
-    await client.post(
-        f"/api/v1/subscriptions/{subscription_id}/toggle?active=false", headers=obras
-    )
-    await client.post(
-        f"/api/v1/subscriptions/{subscription_id}/toggle?active=true", headers=obras
-    )
+    await client.post(f"/api/v1/subscriptions/{subscription_id}/toggle?active=false", headers=obras)
+    await client.post(f"/api/v1/subscriptions/{subscription_id}/toggle?active=true", headers=obras)
 
     ac = await auth("atencion-ciudadana")
     response = await client.post("/api/v1/events", json=make_envelope(), headers=ac)
@@ -119,9 +115,7 @@ async def test_un_modulo_solo_ve_sus_suscripciones(client, auth):
 # ----------------------------------------------------------------------
 # Tipos de evento
 # ----------------------------------------------------------------------
-async def test_declarar_un_tipo_le_quita_la_marca_de_descubierto(
-    client, auth, make_envelope
-):
+async def test_declarar_un_tipo_le_quita_la_marca_de_descubierto(client, auth, make_envelope):
     obras = await auth("obras")
     await client.post(
         "/api/v1/events",
@@ -217,7 +211,8 @@ async def test_dar_de_alta_un_modulo_devuelve_el_secret_una_vez(client, auth):
     assert "no lo puede volver a mostrar" in body["warning"]
 
 
-async def test_el_secret_nuevo_sirve_para_entrar(client, auth):
+async def test_el_secret_nuevo_sirve_para_publicar(client, auth):
+    """El secret de un modulo nuevo habilita el token de maquina, no el login."""
     admin = await auth("core")
     secret = (
         await client.post(
@@ -227,11 +222,23 @@ async def test_el_secret_nuevo_sirve_para_entrar(client, auth):
         )
     ).json()["secret"]
 
-    login = await client.post(
-        "/api/v1/auth/login", json={"module": "rentas", "secret": secret}
+    token = await client.post(
+        "/api/v1/auth/module-token", json={"module": "rentas", "secret": secret}
     )
-    assert login.status_code == 200
-    assert login.json()["isAdmin"] is False
+    assert token.status_code == 200
+    assert token.json()["kind"] == "module"
+    assert token.json()["isAdmin"] is False
+
+
+async def test_un_modulo_nuevo_no_tiene_cuentas_todavia(client, auth):
+    """Dar de alta el modulo no crea personas: hay que crearlas aparte."""
+    admin = await auth("core")
+    await client.post(
+        "/api/v1/modules", json={"name": "rentas", "displayName": "Rentas"}, headers=admin
+    )
+
+    cuentas = (await client.get("/api/v1/users", headers=admin)).json()
+    assert [u for u in cuentas if u["moduleName"] == "rentas"] == []
 
 
 async def test_un_modulo_comun_no_puede_dar_de_alta(client, auth):
@@ -244,30 +251,52 @@ async def test_un_modulo_comun_no_puede_dar_de_alta(client, auth):
 
 async def test_rotar_el_secret_invalida_el_anterior(client, auth):
     admin = await auth("core")
-    nuevo = (
-        await client.post("/api/v1/modules/obras/rotate-secret", headers=admin)
-    ).json()["secret"]
+    nuevo = (await client.post("/api/v1/modules/obras/rotate-secret", headers=admin)).json()[
+        "secret"
+    ]
 
     viejo = await client.post(
-        "/api/v1/auth/login", json={"module": "obras", "secret": "test-secret-para-los-modulos"}
+        "/api/v1/auth/module-token",
+        json={"module": "obras", "secret": MODULE_SECRET},
     )
     assert viejo.status_code == 401
 
     actual = await client.post(
-        "/api/v1/auth/login", json={"module": "obras", "secret": nuevo}
+        "/api/v1/auth/module-token", json={"module": "obras", "secret": nuevo}
     )
     assert actual.status_code == 200
 
 
-async def test_dar_de_baja_un_modulo_impide_el_login(client, auth):
+async def test_rotar_el_secret_no_le_corta_el_dashboard_a_nadie(client, auth):
+    """Es el punto de haber separado las dos credenciales: rotar la de maquina
+    no obliga a que las personas vuelvan a pedir acceso."""
+    admin = await auth("core")
+    await client.post("/api/v1/modules/obras/rotate-secret", headers=admin)
+
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "obras@munitest.com", "password": USER_PASSWORD},
+    )
+    assert login.status_code == 200
+
+
+async def test_dar_de_baja_un_modulo_impide_entrar(client, auth):
     admin = await auth("core")
     await client.patch("/api/v1/modules/obras", json={"active": False}, headers=admin)
 
+    # Ni las personas ni el backend del equipo.
     login = await client.post(
-        "/api/v1/auth/login", json={"module": "obras", "secret": "test-secret-para-los-modulos"}
+        "/api/v1/auth/login",
+        json={"email": "obras@munitest.com", "password": USER_PASSWORD},
     )
     assert login.status_code == 403
     assert login.json()["code"] == "MODULE_INACTIVE"
+
+    token = await client.post(
+        "/api/v1/auth/module-token",
+        json={"module": "obras", "secret": MODULE_SECRET},
+    )
+    assert token.status_code == 403
 
 
 async def test_un_modulo_de_baja_no_recibe_eventos(client, auth, make_envelope):

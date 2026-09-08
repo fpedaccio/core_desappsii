@@ -4,12 +4,13 @@ Módulo 9 del TPO de Desarrollo de Aplicaciones II (UADE). Plataforma municipal
 distribuida, 9 módulos independientes.
 
 **Qué hace:** recibe los eventos asincrónicos de los 9 módulos, valida que estén
-bien formados, guarda evidencia y los entrega a quien esté suscripto. Cada equipo
-entra a un dashboard con su credencial y ve **solo su tráfico**: lo que publicó,
-lo que recibió y en qué estado quedó cada entrega.
+bien formados, guarda evidencia y los entrega a quien esté suscripto. Cada
+integrante entra al dashboard con su cuenta y ve **solo el tráfico de su
+módulo**: lo que publicó, lo que recibió y en qué estado quedó cada entrega.
 
-**Qué no hace:** no administra usuarios ni ciudadanos, no valida reglas de negocio
-de las áreas y no interpreta el contenido de los eventos.
+**Qué no hace:** no es el proveedor de identidad de la plataforma (no sabe de
+ciudadanos ni de usuarios finales del municipio), no valida reglas de negocio de
+las áreas y no interpreta el contenido de los eventos.
 
 ---
 
@@ -20,7 +21,7 @@ cd backend && .venv/bin/uvicorn app.main:app --reload
 ```
 
 - **Swagger: http://localhost:8000/docs**
-- Login: módulo `core` (es el admin, ve el tráfico de todos)
+- Login: `core@muni.uade.edu.ar` / `Cambiala123` (es el admin, ve todo)
 
 Si la base está vacía:
 
@@ -28,11 +29,26 @@ Si la base está vacía:
 cd backend && .venv/bin/python -m app.seeds
 ```
 
-El seed carga los 9 módulos y los **73 tipos de evento del board de Miro**, con
-sus 71 publicaciones y 78 suscripciones declaradas. Es idempotente y no rota los
-secrets ya generados. Para empezar de cero: `python -m app.seeds --drop`.
+El seed carga los 9 módulos con una cuenta inicial cada uno, y los **73 tipos de
+evento del board de Miro** con sus 71 publicaciones y 78 suscripciones. Es
+idempotente y no rota los secrets ya generados. Para empezar de cero:
+`python -m app.seeds --drop`.
 
-Los secrets se imprimen la primera vez. Para rotar uno:
+### Dos credenciales, a propósito separadas
+
+| Credencial | Quién la usa | Para qué |
+|---|---|---|
+| Email + contraseña | Cada integrante de un equipo | Entrar al dashboard |
+| Secret del módulo | El backend del equipo | Publicar eventos |
+
+Están separadas porque se rotan distinto: cambiar la contraseña de alguien no
+toca el backend desplegado, y rotar el secret de máquina no le corta el acceso al
+dashboard a nadie. La auditoría de reintentos registra **a la persona**, no al
+equipo.
+
+Cada equipo arranca con `<modulo>@muni.uade.edu.ar` / `Cambiala123` y desde el
+dashboard crea las cuentas de sus integrantes. Los secrets de máquina se imprimen
+la primera vez; para rotar uno:
 `POST /api/v1/modules/{nombre}/rotate-secret`.
 
 ### El worker
@@ -177,10 +193,9 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out core.key
 
 ## Estado
 
-**Backend completo:** 39 endpoints, 8 tablas, Swagger documentado, verificado
-end-to-end (idempotencia, validación de estructura, DLQ con reintento auditado,
-scope de datos por módulo, alertas de integración).
+**Backend completo:** 45 endpoints, 9 tablas, Swagger documentado, verificado
+end-to-end. **144 tests, 91% de cobertura.**
 
 **Pendiente:** el dashboard (lo hace otra persona, con
-[docs/api-para-el-frontend.md](docs/api-para-el-frontend.md)), la suite de tests y
-la configuración de deploy.
+[docs/api-para-el-frontend.md](docs/api-para-el-frontend.md)) y la configuración
+de deploy.

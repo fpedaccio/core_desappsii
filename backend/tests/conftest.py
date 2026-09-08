@@ -22,14 +22,19 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_session
-from app.core.security import hash_opaque_token
+from app.core.security import hash_opaque_token, hash_password
 from app.main import create_app
 from app.messaging.fake import FakeBroker
 from app.messaging.provider import set_broker
 from app.messaging.topology import full_topology
 from app.models.registry import EventType, ModuleAccount, Publication, Subscription
+from app.models.users import User
 
-MODULE_SECRET = "test-secret-para-los-modulos"
+MODULE_SECRET = "test-secret-de-maquina"
+"""Secret de maquina de los modulos, para publicar eventos."""
+
+USER_PASSWORD = "Test1234"
+"""Contrasena de las personas de prueba: `<modulo>@munitest.com`."""
 
 
 @pytest_asyncio.fixture
@@ -63,10 +68,11 @@ async def broker() -> AsyncIterator[FakeBroker]:
 
 @pytest_asyncio.fixture
 async def seeded(session_factory, broker):
-    """Tres modulos y dos tipos de evento, con una suscripcion.
+    """Tres modulos con una persona cada uno, y dos tipos de evento.
 
     `atencion-ciudadana` publica `ticketCreated`, `obras` lo consume, y `core` es
-    el admin. Alcanza para casi todos los casos.
+    el admin. Cada modulo tiene su cuenta `<modulo>@munitest.com` y su secret de
+    maquina. Alcanza para casi todos los casos.
     """
     async with session_factory() as session:
         modules = {}
@@ -101,6 +107,19 @@ async def seeded(session_factory, broker):
             session.add(event_type)
             types[type_name] = event_type
         await session.flush()
+
+        # Una persona por modulo: es con esto que se entra al dashboard.
+        for name, module in modules.items():
+            session.add(
+                User(
+                    email=f"{name}@munitest.com",
+                    password_hash=hash_password(USER_PASSWORD),
+                    full_name=f"Persona de {name}",
+                    module_id=module.id,
+                    active=True,
+                    failed_login_attempts=0,
+                )
+            )
 
         session.add(
             Subscription(
@@ -147,16 +166,38 @@ async def client(session_factory, broker, seeded) -> AsyncIterator[AsyncClient]:
 
 @pytest_asyncio.fixture
 async def auth(client):
-    """Devuelve los headers de un modulo: `await auth("obras")`."""
+    """Headers de la **persona** de un modulo: `await auth("obras")`.
+
+    Es el camino del dashboard, el que usa casi todos los tests.
+    """
 
     async def _login(module: str) -> dict[str, str]:
         response = await client.post(
-            "/api/v1/auth/login", json={"module": module, "secret": MODULE_SECRET}
+            "/api/v1/auth/login",
+            json={"email": f"{module}@munitest.com", "password": USER_PASSWORD},
         )
         assert response.status_code == 200, response.text
         return {"Authorization": f"Bearer {response.json()['accessToken']}"}
 
     return _login
+
+
+@pytest_asyncio.fixture
+async def machine_auth(client):
+    """Headers del **backend** de un modulo: `await machine_auth("obras")`.
+
+    Es el camino de publicar eventos, con el secret de maquina.
+    """
+
+    async def _token(module: str) -> dict[str, str]:
+        response = await client.post(
+            "/api/v1/auth/module-token",
+            json={"module": module, "secret": MODULE_SECRET},
+        )
+        assert response.status_code == 200, response.text
+        return {"Authorization": f"Bearer {response.json()['accessToken']}"}
+
+    return _token
 
 
 def envelope(**overrides):

@@ -31,12 +31,14 @@ from app.repositories.registry_repository import (
     ModuleRepository,
     PublicationRepository,
     SubscriptionRepository,
+    UserRepository,
 )
 from app.services.auth_service import AuthService
 from app.services.delivery_service import DeliveryService
 from app.services.event_hub_service import EventHubService
 from app.services.registry_service import RegistryService
 from app.services.stats_service import StatsService
+from app.services.user_service import UserService
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -57,15 +59,26 @@ BrokerDep = Annotated[Broker, Depends(get_message_broker)]
 # ----------------------------------------------------------------------
 @dataclass
 class Caller:
-    """El modulo autenticado.
+    """Quien esta llamando: una persona del dashboard o el backend de un modulo.
 
-    No hay usuarios ni roles: el unico privilegio es `is_admin`, que tiene el
-    equipo 9 y le permite ver el trafico de todos los modulos.
+    Los dos vienen atados a un modulo, y de ahi sale que datos pueden ver. No hay
+    roles: el unico privilegio es el `is_admin` del modulo (el equipo 9).
+
+    `actor` es lo que se registra en la auditoria: el email de la persona, o
+    `module:<nombre>` si el que llama es un backend.
     """
 
     module: str
     display_name: str
     is_admin: bool
+    kind: str  # "user" | "module"
+    actor: str
+    email: str | None = None
+    name: str | None = None
+
+    @property
+    def is_person(self) -> bool:
+        return self.kind == "user"
 
     @property
     def scope(self) -> str | None:
@@ -88,13 +101,22 @@ async def get_caller(
     if not module:
         raise UnauthorizedError("El token no identifica un modulo.", code="TOKEN_INVALID")
 
+    kind = str(claims.get("kind") or "module")
+    email = claims.get("email")
+
     caller = Caller(
         module=str(module),
         display_name=str(claims.get("displayName") or module),
         is_admin=bool(claims.get("isAdmin")),
+        kind=kind,
+        # La auditoria registra a la persona cuando hay una. Que un reintento
+        # diga "lo hizo tal" y no "lo hizo el equipo 9" es justamente el punto
+        # de tener cuentas por persona.
+        actor=str(email) if email else f"module:{module}",
+        email=email,
+        name=claims.get("name"),
     )
-    # El actor viaja por contexto: la auditoria de reintentos lo lee de ahi.
-    set_actor(caller.module)
+    set_actor(caller.actor)
     return caller
 
 
@@ -132,13 +154,18 @@ EventLogRepoDep = Annotated[EventLogRepository, Depends(_repo(EventLogRepository
 DeliveryRepoDep = Annotated[DeliveryRepository, Depends(_repo(DeliveryRepository))]
 DeadLetterRepoDep = Annotated[DeadLetterRepository, Depends(_repo(DeadLetterRepository))]
 RetryAuditRepoDep = Annotated[RetryAuditRepository, Depends(_repo(RetryAuditRepository))]
+UserRepoDep = Annotated[UserRepository, Depends(_repo(UserRepository))]
 
 
 # ----------------------------------------------------------------------
 # Servicios
 # ----------------------------------------------------------------------
-def get_auth_service(module_repo: ModuleRepoDep) -> AuthService:
-    return AuthService(module_repo=module_repo)
+def get_auth_service(user_repo: UserRepoDep, module_repo: ModuleRepoDep) -> AuthService:
+    return AuthService(user_repo=user_repo, module_repo=module_repo)
+
+
+def get_user_service(user_repo: UserRepoDep, module_repo: ModuleRepoDep) -> UserService:
+    return UserService(user_repo=user_repo, module_repo=module_repo)
 
 
 def get_registry_service(
@@ -219,6 +246,7 @@ def get_stats_service(
 
 
 AuthDep = Annotated[AuthService, Depends(get_auth_service)]
+UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 RegistryDep = Annotated[RegistryService, Depends(get_registry_service)]
 DeliveryDep = Annotated[DeliveryService, Depends(get_delivery_service)]
 StatsDep = Annotated[StatsService, Depends(get_stats_service)]

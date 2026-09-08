@@ -65,9 +65,7 @@ def test_reporta_valor_fuera_del_enum():
 def test_reporta_campos_anidados_con_su_ruta():
     schema = {
         "type": "object",
-        "properties": {
-            "citizen": {"type": "object", "properties": {"email": {"type": "string"}}}
-        },
+        "properties": {"citizen": {"type": "object", "properties": {"email": {"type": "string"}}}},
     }
     with pytest.raises(ContractViolationError) as exc:
         validate_data(schema, {"citizen": {"email": 42}})

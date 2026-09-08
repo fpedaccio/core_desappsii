@@ -10,11 +10,13 @@ RS256; el Core es el unico que los valida, asi que no se expone ningun JWKS.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import bcrypt
 import jwt
 import structlog
 from cryptography.hazmat.primitives import serialization
@@ -26,6 +28,32 @@ from app.core.errors import UnauthorizedError
 logger = structlog.get_logger(__name__)
 
 ALGORITHM = "RS256"
+
+# Limite del algoritmo: arriba de eso bcrypt truncaria en silencio.
+_BCRYPT_MAX_BYTES = 72
+
+
+# --------------------------------------------------------------------------
+# Contrasenas de personas
+# --------------------------------------------------------------------------
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(_prepare_password(password), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(_prepare_password(password), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        # Hash con formato invalido: se trata como credencial incorrecta.
+        return False
+
+
+def _prepare_password(password: str) -> bytes:
+    """Pre-hashea si excede el limite de bcrypt, para no truncar la contrasena."""
+    raw = password.encode("utf-8")
+    if len(raw) > _BCRYPT_MAX_BYTES:
+        return base64.b64encode(hashlib.sha256(raw).digest())
+    return raw
 
 
 # --------------------------------------------------------------------------

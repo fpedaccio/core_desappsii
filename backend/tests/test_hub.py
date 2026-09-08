@@ -126,9 +126,7 @@ async def test_quitar_el_schema_vuelve_a_dejar_pasar_todo(client, auth, make_env
     )
 
     headers = await auth("atencion-ciudadana")
-    response = await client.post(
-        "/api/v1/events", json=make_envelope(data={}), headers=headers
-    )
+    response = await client.post("/api/v1/events", json=make_envelope(data={}), headers=headers)
     assert response.status_code == 202
 
 
@@ -151,9 +149,7 @@ async def test_lo_rechazado_queda_en_la_dlq(client, auth, make_envelope):
     assert items[0]["retryable"] is True
 
 
-async def test_reintentar_tras_corregir_el_schema_reprocesa_el_evento(
-    client, auth, make_envelope
-):
+async def test_reintentar_tras_corregir_el_schema_reprocesa_el_evento(client, auth, make_envelope):
     """El camino que evita pedirle al modulo origen que republique."""
     admin = await auth("core")
     await client.put(
@@ -197,7 +193,9 @@ async def test_el_reintento_queda_auditado(client, auth, make_envelope):
     entries = audit.json()["items"]
     assert len(entries) == 1
     assert entries[0]["mode"] == "MANUAL"
-    assert entries[0]["actor"] == "core"
+    # La auditoria identifica a la **persona**, no al equipo: es el punto de
+    # tener cuentas por integrante.
+    assert entries[0]["actor"] == "core@munitest.com"
     assert entries[0]["result"] == "SUCCESS"
 
 
@@ -224,7 +222,7 @@ async def test_descartar_exige_motivo(client, auth, make_envelope):
     )
     assert con_motivo.status_code == 200
     assert con_motivo.json()["status"] == "DISCARDED"
-    assert con_motivo.json()["resolvedBy"] == "core"
+    assert con_motivo.json()["resolvedBy"] == "core@munitest.com"
 
 
 async def test_una_dlq_ya_resuelta_no_se_reintenta(client, auth, make_envelope):
@@ -250,9 +248,7 @@ async def test_la_journey_junta_los_eventos_por_correlation_id(client, auth, mak
     ac = await auth("atencion-ciudadana")
     obras = await auth("obras")
 
-    await client.post(
-        "/api/v1/events", json=make_envelope(correlationId=correlation), headers=ac
-    )
+    await client.post("/api/v1/events", json=make_envelope(correlationId=correlation), headers=ac)
     await client.post(
         "/api/v1/events",
         json=make_envelope(

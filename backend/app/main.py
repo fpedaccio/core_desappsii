@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from app.api.v1 import auth, dashboard, dlq, events, registry
+from app.api.v1 import auth, dashboard, dlq, events, registry, users
 from app.api.v1.schemas.dto import LivenessResponse, ReadinessResponse
 from app.core.config import settings
 from app.core.context import TRACE_HEADER, set_trace_id
@@ -49,7 +49,9 @@ y no interpreta el contenido de los eventos.
 
 ## Como empezar
 
-1. `POST /api/v1/auth/login` con el nombre de tu modulo y tu secret.
+1. `POST /api/v1/auth/login` con tu email y contrasena (dashboard), o
+   `POST /api/v1/auth/module-token` con el secret del modulo (para publicar
+   desde tu backend).
 2. `POST /api/v1/subscriptions` para recibir los tipos que te interesan.
 3. `POST /api/v1/events` para publicar (o publica en el exchange `muni.inbox`).
 4. `GET /api/v1/dashboard` para ver tus estadisticas.
@@ -119,7 +121,19 @@ def create_app() -> FastAPI:
         docs_url="/docs",
         redoc_url="/redoc",
         openapi_tags=[
-            {"name": "Autenticacion", "description": "Login de modulos."},
+            {
+                "name": "Autenticacion",
+                "description": (
+                    "Login de personas al dashboard, y token de maquina para que "
+                    "el backend de un modulo publique eventos."
+                ),
+            },
+            {
+                "name": "Cuentas del dashboard",
+                "description": (
+                    "Los integrantes de cada equipo. Cada equipo administra las suyas."
+                ),
+            },
             {
                 "name": "Eventos",
                 "description": "Publicar eventos y consultar la bitacora.",
@@ -155,7 +169,14 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(app)
 
-    for router in (auth.router, events.router, registry.router, dlq.router, dashboard.router):
+    for router in (
+        auth.router,
+        users.router,
+        events.router,
+        registry.router,
+        dlq.router,
+        dashboard.router,
+    ):
         app.include_router(router, prefix=settings.api_prefix)
 
     _register_health(app)

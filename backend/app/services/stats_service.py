@@ -381,17 +381,12 @@ def _edit_distance_at_most(left: str, right: str, limit: int) -> bool:
         for j in range(1, cols):
             cost = 0 if left[i - 1] == right[j - 1] else 1
             distance[i][j] = min(
-                distance[i - 1][j] + 1,       # borrar
-                distance[i][j - 1] + 1,       # insertar
+                distance[i - 1][j] + 1,  # borrar
+                distance[i][j - 1] + 1,  # insertar
                 distance[i - 1][j - 1] + cost,  # sustituir
             )
             # Transposicion de dos caracteres adyacentes.
-            if (
-                i > 1
-                and j > 1
-                and left[i - 1] == right[j - 2]
-                and left[i - 2] == right[j - 1]
-            ):
+            if i > 1 and j > 1 and left[i - 1] == right[j - 2] and left[i - 2] == right[j - 1]:
                 distance[i][j] = min(distance[i][j], distance[i - 2][j - 2] + 1)
 
         if min(distance[i]) > limit:

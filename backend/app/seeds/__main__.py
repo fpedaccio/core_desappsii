@@ -16,17 +16,22 @@ import structlog
 
 from app.core.database import Base, SessionFactory, engine
 from app.core.logging import configure_logging
-from app.core.security import generate_opaque_token, hash_opaque_token
+from app.core.security import generate_opaque_token, hash_opaque_token, hash_password
 from app.models.registry import EventType, ModuleAccount, Publication, Subscription
+from app.models.users import User
 from app.repositories.registry_repository import (
     EventTypeRepository,
     ModuleRepository,
     PublicationRepository,
     SubscriptionRepository,
+    UserRepository,
 )
 from app.seeds.board_events import DESCRIPTIONS, MISMATCHES, MODULES
 
 logger = structlog.get_logger(__name__)
+
+SEED_PASSWORD = "Cambiala123"
+"""Contrasena de las cuentas iniciales. Es de desarrollo: hay que cambiarla."""
 
 
 async def run(*, drop: bool = False) -> None:
@@ -39,13 +44,20 @@ async def run(*, drop: bool = False) -> None:
         await connection.run_sync(Base.metadata.create_all)
 
     secrets: dict[str, str] = {}
-    counts = {"modules": 0, "event_types": 0, "subscriptions": 0, "publications": 0}
+    counts = {
+        "modules": 0,
+        "users": 0,
+        "event_types": 0,
+        "subscriptions": 0,
+        "publications": 0,
+    }
 
     async with SessionFactory() as session:
         module_repo = ModuleRepository(session)
         event_type_repo = EventTypeRepository(session)
         subscription_repo = SubscriptionRepository(session)
         publication_repo = PublicationRepository(session)
+        user_repo = UserRepository(session)
 
         # --- tipos de evento ------------------------------------------
         all_types = sorted({e for _, _, _, pub, con in MODULES for e in pub + con})
@@ -128,6 +140,23 @@ async def run(*, drop: bool = False) -> None:
                     )
                     counts["subscriptions"] += 1
 
+        # Una cuenta inicial por equipo, para que puedan entrar y despues crear
+        # las de sus integrantes desde el dashboard.
+        for name in module_by_name:
+            email = f"{name}@muni.uade.edu.ar"
+            if await user_repo.get_by_email(email) is None:
+                user_repo.add(
+                    User(
+                        email=email,
+                        password_hash=hash_password(SEED_PASSWORD),
+                        full_name=f"Cuenta inicial de {name}",
+                        module_id=module_by_name[name].id,
+                        active=True,
+                        failed_login_attempts=0,
+                    )
+                )
+                counts["users"] += 1
+
         await session.commit()
 
     _report(counts, secrets)
@@ -141,16 +170,27 @@ def _report(counts: dict[str, int], secrets: dict[str, str]) -> None:
     print("\n=== Datos cargados ===")
     print(summary or "nada nuevo: ya estaba todo cargado")
 
+    print("\n=== Entrar al dashboard (personas) ===")
+    print(f"Una cuenta inicial por equipo, todas con la contrasena {SEED_PASSWORD!r}:\n")
+    print(
+        '  POST /api/v1/auth/login  {"email": "<modulo>@muni.uade.edu.ar", '
+        f'"password": "{SEED_PASSWORD}"}}'
+    )
+    print("\nCambiala en el primer ingreso, y despues cada equipo crea las cuentas")
+    print("de sus integrantes con POST /api/v1/users.")
+    print("\nEl equipo 9 entra con core@muni.uade.edu.ar y ve el trafico de todos.")
+
     if secrets:
-        print("\n=== Credenciales de los modulos ===")
-        print("Guardalas: el Core solo conserva su hash.\n")
+        print("\n=== Secrets de maquina (publicar eventos) ===")
+        print("Van en la config del backend de cada equipo, no los usa ninguna")
+        print("persona. Guardalos: el Core solo conserva su hash.\n")
         for name, secret in sorted(secrets.items()):
             print(f"  {name:22} {secret}")
-        print("\nCada equipo entra con:")
-        print('  POST /api/v1/auth/login  {"module": "<nombre>", "secret": "<secret>"}')
+        print("\nEl backend de cada equipo obtiene su token con:")
+        print('  POST /api/v1/auth/module-token  {"module": "<nombre>", "secret": "<secret>"}')
     else:
-        print("\nLas credenciales ya estaban generadas y no se tocaron.")
-        print("Para rotar una:  POST /api/v1/modules/{nombre}/rotate-secret")
+        print("\nLos secrets de maquina ya estaban generados y no se tocaron.")
+        print("Para rotar uno:  POST /api/v1/modules/{nombre}/rotate-secret")
 
     print("\n=== Desalineaciones detectadas en el board ===")
     print("Los nombres se transcribieron tal cual, con typos incluidos:")

@@ -80,20 +80,44 @@ pasar por otro equipo.
 
 ## 3. Autenticarse
 
+Tu equipo tiene **dos credenciales distintas**, y esta parte usa la segunda:
+
+| Credencial | Quién la usa | Para qué |
+|---|---|---|
+| Email + contraseña | Cada integrante | Entrar al dashboard |
+| **Secret del módulo** | **Tu backend** | **Publicar eventos** |
+
+Para publicar, tu backend pide un token con el secret del módulo:
+
 ```bash
-curl -X POST http://localhost:8000/api/v1/auth/login \
+curl -X POST http://localhost:8000/api/v1/auth/module-token \
   -H "Content-Type: application/json" \
   -d '{"module": "obras", "secret": "<el que te dio el equipo 9>"}'
 ```
 
 ```json
-{ "accessToken": "eyJ...", "tokenType": "Bearer", "expiresIn": 900 }
+{ "accessToken": "eyJ...", "tokenType": "Bearer", "expiresIn": 900, "kind": "module" }
 ```
 
-Dura 15 minutos, sin refresh: cuando expira pedís otro. Si perdiste el secret, el
-equipo 9 lo rota con `POST /api/v1/modules/{tu-modulo}/rotate-secret`.
+Dura 15 minutos, sin refresh: cuando expira pedís otro.
 
----
+**El secret va en la configuración de tu backend, no lo usa ninguna persona.**
+Están separados a propósito: si se rota el secret, nadie pierde el acceso al
+dashboard; y si alguien cambia su contraseña, tu backend sigue publicando.
+
+Si perdiste el secret, el equipo 9 lo rota con
+`POST /api/v1/modules/{tu-modulo}/rotate-secret` — pero acordate de actualizar la
+config de tu backend, porque el anterior deja de servir en el acto.
+
+Para **entrar al dashboard**, cada integrante usa su propia cuenta:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/login \
+  -d '{"email": "ana@obras.uade.edu.ar", "password": "..."}'
+```
+
+Tu equipo arranca con una cuenta inicial (`<tu-modulo>@muni.uade.edu.ar`) y desde
+el dashboard crean las de cada integrante con `POST /api/v1/users`.
 
 ## 4. `correlationId`: el recorrido de un trámite
 
@@ -264,7 +288,9 @@ PUT /api/v1/event-types/workOrderScheduled/schema
 
 ## 9. Checklist antes de integrar
 
-- [ ] Tenés tu `secret` (lo da el equipo 9).
+- [ ] Tenés el `secret` de máquina de tu módulo (lo da el equipo 9) en la config
+      de tu backend.
+- [ ] Cada integrante tiene su cuenta del dashboard.
 - [ ] Te suscribiste a lo que querés recibir.
 - [ ] Declaraste lo que publicás (`POST /api/v1/publications`) — es documentación,
       no un permiso, pero es lo que hace que el mapa detecte los agujeros.

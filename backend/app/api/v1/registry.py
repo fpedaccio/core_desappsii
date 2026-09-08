@@ -51,8 +51,10 @@ async def list_modules(caller: CallerDep, registry: RegistryDep) -> list[ModuleR
     status_code=status.HTTP_201_CREATED,
     summary="Dar de alta un modulo",
     description=(
-        "Solo el administrador. Devuelve el secret en claro **una sola vez**: el "
-        "Core guarda unicamente su hash."
+        "Solo el administrador. Devuelve el **secret de maquina** en claro una "
+        "sola vez: es el que usa el backend del equipo para publicar eventos.\n\n"
+        "Para que las personas del equipo puedan entrar al dashboard hace falta "
+        "crearles una cuenta con `POST /api/v1/users`."
     ),
 )
 async def create_module(
@@ -65,7 +67,7 @@ async def create_module(
         description=payload.description,
         contact_email=payload.contact_email,
     )
-    secret = auth.rotate_secret(module)
+    secret = auth.rotate_module_secret(module)
     return SecretResponse(module=module.name, secret=secret)
 
 
@@ -95,14 +97,19 @@ async def update_module(
 @router.post(
     "/modules/{module_name}/rotate-secret",
     response_model=SecretResponse,
-    summary="Rotar el secret de un modulo",
-    description="Solo el administrador. El secret anterior deja de servir en el acto.",
+    summary="Rotar el secret de maquina de un modulo",
+    description=(
+        "Solo el administrador. El secret anterior deja de servir en el acto, asi "
+        "que el equipo tiene que actualizar la config de su backend.\n\n"
+        "**No afecta el acceso de las personas al dashboard**: para eso estan sus "
+        "cuentas."
+    ),
 )
 async def rotate_secret(
     module_name: str, admin: AdminDep, registry: RegistryDep, auth: AuthDep
 ) -> SecretResponse:
     module = await registry.get_module_by_name(module_name)
-    secret = auth.rotate_secret(module)
+    secret = auth.rotate_module_secret(module)
     return SecretResponse(module=module.name, secret=secret)
 
 
