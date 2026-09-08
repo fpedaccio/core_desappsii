@@ -45,35 +45,16 @@ class Settings(BaseSettings):
     retry_delays: Annotated[list[int], NoDecode] = Field(default=[5, 30, 120, 600])
 
     # --- Seguridad --------------------------------------------------------
-    # RS256 para que los otros 8 modulos validen tokens offline via JWKS.
-    # Si no se configuran claves, se genera un par efimero al arrancar (solo dev).
+    # Sin claves configuradas se genera un par efimero al arrancar (solo dev):
+    # los tokens dejan de valer al reiniciar. En produccion es obligatoria.
     jwt_private_key: str | None = None
     jwt_public_key: str | None = None
-    jwt_kid: str = "core-key-1"
     jwt_issuer: str = "muni-core"
     jwt_audience: str = "muni-platform"
+    # El token del dashboard. Sin refresh: cuando expira se vuelve a loguear.
     access_token_ttl_minutes: int = 15
-    refresh_token_ttl_days: int = 7
 
     cors_origins: Annotated[list[str], NoDecode] = Field(default=["http://localhost:3000"])
-
-    # Usuario administrador inicial creado por el seed.
-    seed_admin_email: str = "admin@muni.uade.edu.ar"
-    seed_admin_password: str = "Admin123!"
-
-    # --- Notificaciones ---------------------------------------------------
-    # Sin credenciales SMTP los envios de email caen al canal mock y quedan
-    # registrados igual, para poder demostrar el flujo sin servidor de correo.
-    smtp_host: str | None = None
-    smtp_port: int = 587
-    smtp_user: str | None = None
-    smtp_password: str | None = None
-    smtp_from: str = "no-reply@muni.uade.edu.ar"
-    smtp_use_tls: bool = True
-
-    # --- Monitoreo --------------------------------------------------------
-    health_poll_interval_seconds: int = 60
-    health_poll_timeout_seconds: float = 5.0
 
     @field_validator("cors_origins", "retry_delays", mode="before")
     @classmethod

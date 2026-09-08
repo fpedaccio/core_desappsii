@@ -1,17 +1,16 @@
 """Reintentos y Dead Letter Queue.
 
-Las tres reglas del enunciado que gobiernan este archivo:
+Tres reglas del enunciado gobiernan este archivo:
 
-* *"Los mensajes que no puedan procesarse luego de los reintentos deberan
-  enviarse a una Dead Letter Queue."*
-* *"Los mensajes fallidos no deberan perderse."*
-* *"Los reintentos deberan quedar auditados."*
+* los mensajes que no puedan procesarse tras los reintentos van a una DLQ;
+* los mensajes fallidos no deben perderse;
+* los reintentos quedan auditados.
 
 El backoff se implementa con una cola por escalon (5s / 30s / 2m / 10m): el
 mensaje se publica en el exchange del escalon, espera el TTL de esa cola y al
-vencer vuelve solo a `muni.events` conservando su routing key, es decir, la cola
-del modulo destino. Agotados los escalones, la entrega queda `DEAD` y el mensaje
-aparece en la DLQ para intervencion manual.
+vencer vuelve solo a `muni.events` conservando su routing key, o sea la cola del
+modulo destino. Agotados los escalones, la entrega queda `DEAD` y aparece en la
+DLQ para intervencion manual.
 """
 
 from __future__ import annotations
@@ -57,20 +56,15 @@ from app.services.event_hub_service import (
     REASON_DELIVERY_FAILED,
     REASON_MALFORMED_MESSAGE,
     REASON_SCHEMA_VIOLATION,
-    REASON_UNKNOWN_CONTRACT_VERSION,
-    REASON_UNKNOWN_EVENT_TYPE,
     EventHubService,
 )
 
 logger = structlog.get_logger(__name__)
 
-CONFIG_REASONS = {
-    REASON_UNKNOWN_EVENT_TYPE,
-    REASON_UNKNOWN_CONTRACT_VERSION,
-    REASON_SCHEMA_VIOLATION,
-}
-"""Motivos que se arreglan cambiando la configuracion del Core, no reenviando
-el mensaje. Estos se resuelven reprocesando el evento ya guardado."""
+CONFIG_REASONS = {REASON_SCHEMA_VIOLATION}
+"""Motivos que se arreglan cambiando la configuracion del Core (el schema del
+tipo, o la suscripcion que faltaba). Se resuelven reprocesando el evento ya
+guardado, sin pedirle nada al modulo origen."""
 
 
 @dataclass
@@ -108,16 +102,14 @@ class DeliveryService:
         self.broker = broker
 
     # ------------------------------------------------------------------
-    # Entrada desde la cola de dead letters
-    # ------------------------------------------------------------------
     async def handle_dlq_message(self, message: InboundMessage) -> DeadLetter | None:
         """Procesa un mensaje que cayo en `q.dlq`.
 
-        Llega aca cuando el modulo destino lo rechazo (nack sin requeue). Si
-        todavia le quedan intentos se programa el siguiente escalon de backoff;
-        si no, queda como dead letter abierta esperando a un operador.
+        Llega aca cuando el modulo destino lo rechazo (nack sin requeue). Si le
+        quedan intentos se programa el siguiente escalon de backoff; si no, queda
+        como dead letter abierta esperando a un operador.
         """
-        event_id = _header_uuid(message, HEADER_EVENT_ID)
+        event_id = _parse_uuid(message.headers.get(HEADER_EVENT_ID))
         target_module = message.headers.get(HEADER_TARGET)
         last_error = message.headers.get(HEADER_ERROR) or "El consumidor rechazo el mensaje."
 
@@ -126,12 +118,10 @@ class DeliveryService:
         except ValueError:
             return await self.hub.record_malformed(raw_body=message.text, queue=message.queue)
 
-        if event_id is None:
-            event_id = _parse_uuid(body.get("eventId")) if isinstance(body, dict) else None
+        if event_id is None and isinstance(body, dict):
+            event_id = _parse_uuid(body.get("eventId"))
 
-        event_log = (
-            await self.event_log_repo.get_by_event_id(event_id) if event_id else None
-        )
+        event_log = await self.event_log_repo.get_by_event_id(event_id) if event_id else None
         delivery = (
             await self.delivery_repo.find_for_event_and_module(event_log.id, target_module)
             if event_log is not None and target_module
@@ -140,7 +130,7 @@ class DeliveryService:
 
         if delivery is None:
             # Sin entrega correlacionada no hay a quien reintentarle: se guarda
-            # como dead letter para que quede constancia y se pueda inspeccionar.
+            # para que quede constancia y se pueda inspeccionar.
             return self._open_dead_letter(
                 event_log=event_log,
                 delivery=None,
@@ -148,35 +138,31 @@ class DeliveryService:
                 event_type=body.get("eventType") if isinstance(body, dict) else None,
                 source_module=body.get("sourceModule") if isinstance(body, dict) else None,
                 target_module=target_module,
-                reason_code=REASON_MALFORMED_MESSAGE
-                if event_log is None
-                else REASON_DELIVERY_FAILED,
+                reason_code=REASON_DELIVERY_FAILED
+                if event_log is not None
+                else REASON_MALFORMED_MESSAGE,
                 reason=(
                     "No se pudo correlacionar el mensaje con una entrega registrada. "
                     f"Detalle: {last_error}"
                 ),
                 raw_payload=body if isinstance(body, dict) else None,
-                raw_body=None if isinstance(body, dict) else message.text,
                 attempts=message.attempt or 1,
             )
 
         delivery.last_error = str(last_error)[:2000]
 
         if delivery.attempts_exhausted:
-            return await self._exhaust(delivery, event_log, body, last_error)
+            return await self._exhaust(delivery, event_log, body, str(last_error))
 
-        return await self._schedule_retry(delivery, event_log, body, last_error)
+        await self._schedule_retry(delivery, event_log, body, str(last_error))
+        return None
 
     async def _schedule_retry(
-        self,
-        delivery: Delivery,
-        event_log: EventLog | None,
-        body: dict,
-        last_error: str,
+        self, delivery: Delivery, event_log: EventLog | None, body: dict, last_error: str
     ) -> None:
-        """Publica el mensaje en el escalon de backoff correspondiente."""
+        """Publica el mensaje en el escalon de backoff que corresponda."""
         attempt = delivery.attempts
-        delay = self._delay_for(attempt)
+        delay = _delay_for(attempt)
         delivery.status = DeliveryStatus.RETRYING
         delivery.next_retry_at = utcnow() + timedelta(seconds=delay)
 
@@ -200,16 +186,10 @@ class DeliveryService:
             attempt=attempt,
             max_attempts=delivery.max_attempts,
             delay_seconds=delay,
-            published=published,
         )
-        return None
 
     async def _exhaust(
-        self,
-        delivery: Delivery,
-        event_log: EventLog | None,
-        body: dict,
-        last_error: str,
+        self, delivery: Delivery, event_log: EventLog | None, body: dict, last_error: str
     ) -> DeadLetter:
         """Agotados los reintentos: la entrega muere y se abre una dead letter."""
         delivery.status = DeliveryStatus.DEAD
@@ -228,7 +208,6 @@ class DeliveryService:
                 f"'{delivery.target_module}'. Ultimo error: {last_error}"
             ),
             raw_payload=body,
-            raw_body=None,
             attempts=delivery.attempts,
         )
         self.retry_audit_repo.add(
@@ -240,7 +219,7 @@ class DeliveryService:
                 actor="system",
                 attempt_number=delivery.attempts,
                 result=RetryResult.FAILURE,
-                error=str(last_error)[:2000],
+                error=last_error[:2000],
                 target_module=delivery.target_module,
             )
         )
@@ -248,7 +227,6 @@ class DeliveryService:
             "delivery_dead_lettered",
             target=delivery.target_module,
             attempts=delivery.attempts,
-            event_id=str(event_log.event_id) if event_log else None,
         )
         return dead_letter
 
@@ -271,19 +249,8 @@ class DeliveryService:
         return dead_letter
 
     # ------------------------------------------------------------------
-    # Reintento manual desde el panel
-    # ------------------------------------------------------------------
     async def retry_dead_letter(self, dead_letter_id: uuid.UUID) -> RetryOutcome:
-        """Reintenta una dead letter. Siempre queda auditado quien la disparo.
-
-        Hay dos caminos segun la causa:
-
-        * **Configuracion del Core** (tipo sin registrar, schema desactualizado):
-          se reprocesa el evento ya guardado. No hace falta que el modulo origen
-          vuelva a publicar nada.
-        * **Entrega fallida**: se vuelve a publicar el mensaje en la cola del
-          modulo destino, reseteando el contador de intentos.
-        """
+        """Reintenta una dead letter. Siempre queda auditado quien la disparo."""
         dead_letter = await self.dead_letter_repo.get_with_retries(dead_letter_id)
         if dead_letter is None:
             raise NotFoundError(f"No existe la dead letter {dead_letter_id}.")
@@ -296,14 +263,15 @@ class DeliveryService:
         actor = get_actor() or "desconocido"
         attempt_number = len(dead_letter.retries) + 1
 
+        if dead_letter.reason_code == REASON_MALFORMED_MESSAGE:
+            raise ConflictError(
+                "Un mensaje malformado no se puede reintentar: no tiene un sobre "
+                "valido. Revisalo, corregilo en el modulo origen y descartalo con "
+                "un motivo."
+            )
+
         if dead_letter.reason_code in CONFIG_REASONS:
             outcome = await self._retry_by_reprocessing(dead_letter, attempt_number)
-        elif dead_letter.reason_code == REASON_MALFORMED_MESSAGE:
-            raise ConflictError(
-                "Un mensaje malformado no se puede reintentar automaticamente: no "
-                "tiene un sobre valido. Revisalo, corregilo en el modulo origen y "
-                "descartalo con un motivo."
-            )
         else:
             outcome = await self._retry_by_republishing(dead_letter, attempt_number)
 
@@ -331,7 +299,6 @@ class DeliveryService:
             "dead_letter_retried",
             dead_letter_id=str(dead_letter.id),
             actor=actor,
-            attempt=attempt_number,
             success=outcome.success,
         )
         return outcome
@@ -341,35 +308,26 @@ class DeliveryService:
     ) -> RetryOutcome:
         if dead_letter.event_log_id is None:
             return RetryOutcome(
-                dead_letter_id=dead_letter.id,
-                success=False,
-                message="La dead letter no referencia un evento persistido.",
-                attempt_number=attempt_number,
+                dead_letter.id, False, "La dead letter no referencia un evento.", attempt_number
             )
 
         event_log = await self.event_log_repo.get_with_deliveries(dead_letter.event_log_id)
         if event_log is None:
             return RetryOutcome(
-                dead_letter_id=dead_letter.id,
-                success=False,
-                message="El evento referenciado ya no existe.",
-                attempt_number=attempt_number,
+                dead_letter.id, False, "El evento referenciado ya no existe.", attempt_number
             )
 
         result = await self.hub.reprocess(event_log)
         if result.accepted:
             targets = ", ".join(result.routed_to) or "sin suscriptores"
             return RetryOutcome(
-                dead_letter_id=dead_letter.id,
-                success=True,
-                message=f"Evento reprocesado y ruteado a: {targets}.",
-                attempt_number=attempt_number,
+                dead_letter.id, True, f"Evento reprocesado y ruteado a: {targets}.", attempt_number
             )
         return RetryOutcome(
-            dead_letter_id=dead_letter.id,
-            success=False,
-            message=result.rejection_reason or "El evento sigue siendo invalido.",
-            attempt_number=attempt_number,
+            dead_letter.id,
+            False,
+            result.rejection_reason or "El evento sigue siendo invalido.",
+            attempt_number,
         )
 
     async def _retry_by_republishing(
@@ -378,10 +336,7 @@ class DeliveryService:
         payload = dead_letter.raw_payload
         if not payload:
             return RetryOutcome(
-                dead_letter_id=dead_letter.id,
-                success=False,
-                message="La dead letter no conserva un payload republicable.",
-                attempt_number=attempt_number,
+                dead_letter.id, False, "No conserva un payload republicable.", attempt_number
             )
 
         delivery = (
@@ -408,10 +363,7 @@ class DeliveryService:
             )
         except Exception as exc:
             return RetryOutcome(
-                dead_letter_id=dead_letter.id,
-                success=False,
-                message=f"No se pudo publicar en '{queue}': {exc}",
-                attempt_number=attempt_number,
+                dead_letter.id, False, f"No se pudo publicar en '{queue}': {exc}", attempt_number
             )
 
         if delivery is not None:
@@ -422,27 +374,18 @@ class DeliveryService:
             delivery.next_retry_at = None
 
         return RetryOutcome(
-            dead_letter_id=dead_letter.id,
-            success=True,
-            message=f"Mensaje republicado en '{queue}'.",
-            attempt_number=attempt_number,
+            dead_letter.id, True, f"Mensaje republicado en '{queue}'.", attempt_number
         )
 
     async def retry_many(self, dead_letter_ids: list[uuid.UUID]) -> BulkRetryOutcome:
-        """Reintento masivo. Cada elemento se audita por separado."""
+        """Reintento masivo. Cada elemento se audita por separado y un fallo no
+        interrumpe a los demas."""
         results: list[RetryOutcome] = []
         for dead_letter_id in dead_letter_ids:
             try:
                 results.append(await self.retry_dead_letter(dead_letter_id))
             except (NotFoundError, ConflictError) as exc:
-                results.append(
-                    RetryOutcome(
-                        dead_letter_id=dead_letter_id,
-                        success=False,
-                        message=exc.message,
-                        attempt_number=0,
-                    )
-                )
+                results.append(RetryOutcome(dead_letter_id, False, exc.message, 0))
         succeeded = sum(1 for item in results if item.success)
         return BulkRetryOutcome(
             total=len(results),
@@ -491,14 +434,12 @@ class DeliveryService:
         return dead_letter
 
     # ------------------------------------------------------------------
-    # Reintentos diferidos (broker caido al momento del ruteo)
-    # ------------------------------------------------------------------
     async def process_due_retries(self, *, limit: int = 100) -> int:
         """Reintenta las entregas cuyo backoff ya vencio.
 
         Cubre el caso en que el broker estaba caido cuando se ruteo el evento: la
         entrega quedo `RETRYING` y el evento persistido. Cuando el broker vuelve,
-        este metodo la completa sin perder nada.
+        esto la completa sin perder nada.
         """
         if not await self.broker.healthy():
             raise ExternalUnavailableError(
@@ -506,10 +447,9 @@ class DeliveryService:
             )
 
         now = utcnow()
-        due = await self.delivery_repo.due_for_retry(now=now, limit=limit)
         processed = 0
 
-        for delivery in due:
+        for delivery in await self.delivery_repo.due_for_retry(now=now, limit=limit):
             event_log = await self.event_log_repo.get(delivery.event_log_id)
             if event_log is None:
                 continue
@@ -535,9 +475,7 @@ class DeliveryService:
                 if delivery.attempts_exhausted:
                     await self._exhaust(delivery, event_log, event_log.envelope, str(exc))
                 else:
-                    delivery.next_retry_at = now + timedelta(
-                        seconds=self._delay_for(delivery.attempts)
-                    )
+                    delivery.next_retry_at = now + timedelta(seconds=_delay_for(delivery.attempts))
                 continue
 
             delivery.status = DeliveryStatus.DELIVERED
@@ -558,10 +496,9 @@ class DeliveryService:
             )
 
         if processed:
-            logger.info("deferred_retries_processed", processed=processed, due=len(due))
+            logger.info("deferred_retries_processed", processed=processed)
         return processed
 
-    # ------------------------------------------------------------------
     async def _publish_retry(
         self, delivery: Delivery, body: dict, *, delay: int, attempt: int
     ) -> bool:
@@ -586,18 +523,13 @@ class DeliveryService:
             )
             return True
         except Exception as exc:
-            logger.warning(
-                "retry_publish_failed", target=delivery.target_module, error=str(exc)
-            )
+            logger.warning("retry_publish_failed", target=delivery.target_module, error=str(exc))
             return False
 
-    def _delay_for(self, attempt: int) -> int:
-        delays = settings.retry_delays or [5]
-        return delays[min(max(attempt, 1), len(delays)) - 1]
 
-
-def _header_uuid(message: InboundMessage, key: str) -> uuid.UUID | None:
-    return _parse_uuid(message.headers.get(key))
+def _delay_for(attempt: int) -> int:
+    delays = settings.retry_delays or [5]
+    return delays[min(max(attempt, 1), len(delays)) - 1]
 
 
 def _parse_uuid(value: object) -> uuid.UUID | None:

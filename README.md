@@ -1,9 +1,15 @@
-# Módulo Core — Municipalidad UADE
+# Core — pasamanos de eventos
 
-Módulo 9 del TPO de Desarrollo de Aplicaciones II: **identidad, integración, notificaciones y monitoreo**.
-Es el HUB de eventos y el proveedor de identidad de los 9 módulos de la plataforma.
+Módulo 9 del TPO de Desarrollo de Aplicaciones II (UADE). Plataforma municipal
+distribuida, 9 módulos independientes.
 
-**Estado actual:** backend completo y funcionando (70 endpoints, Swagger, datos sembrados). Frontend pendiente.
+**Qué hace:** recibe los eventos asincrónicos de los 9 módulos, valida que estén
+bien formados, guarda evidencia y los entrega a quien esté suscripto. Cada equipo
+entra a un dashboard con su credencial y ve **solo su tráfico**: lo que publicó,
+lo que recibió y en qué estado quedó cada entrega.
+
+**Qué no hace:** no administra usuarios ni ciudadanos, no valida reglas de negocio
+de las áreas y no interpreta el contenido de los eventos.
 
 ---
 
@@ -13,194 +19,168 @@ Es el HUB de eventos y el proveedor de identidad de los 9 módulos de la platafo
 cd backend && .venv/bin/uvicorn app.main:app --reload
 ```
 
-- **Swagger:** http://localhost:8000/docs
-- **Admin:** `admin@muni.uade.edu.ar` / `Admin123!`
+- **Swagger: http://localhost:8000/docs**
+- Login: módulo `core` (es el admin, ve el tráfico de todos)
 
-Si la base no existe todavía:
+Si la base está vacía:
 
 ```bash
 cd backend && .venv/bin/python -m app.seeds
 ```
 
-El seed carga 24 permisos, 6 roles, 5 usuarios, 9 módulos, **101 tipos de evento con su contrato
-JSON Schema**, 78 suscripciones, los catálogos globales y 7 reglas de notificación. Es idempotente:
-se puede volver a correr. Para empezar de cero: `python -m app.seeds --drop`.
+El seed carga los 9 módulos y los **73 tipos de evento del board de Miro**, con
+sus 71 publicaciones y 78 suscripciones declaradas. Es idempotente y no rota los
+secrets ya generados. Para empezar de cero: `python -m app.seeds --drop`.
 
-### Usuarios sembrados
+Los secrets se imprimen la primera vez. Para rotar uno:
+`POST /api/v1/modules/{nombre}/rotate-secret`.
 
-Todos con la contraseña `Admin123!`. Sirven para probar que el panel muestra solo las operaciones
-del rol autenticado.
+### El worker
 
-| Email | Rol |
-|---|---|
-| `admin@muni.uade.edu.ar` | ADMIN_SISTEMA (todo) |
-| `seguridad@muni.uade.edu.ar` | RESPONSABLE_SEGURIDAD |
-| `operador@muni.uade.edu.ar` | OPERADOR_TECNICO (opera la DLQ) |
-| `integracion@muni.uade.edu.ar` | RESPONSABLE_INTEGRACION |
-| `auditor@muni.uade.edu.ar` | AUDITOR (solo lectura) |
+El servidor de la API sirve el dashboard y la ingesta HTTP. Para consumir de
+RabbitMQ hace falta el worker aparte:
+
+```bash
+cd backend && .venv/bin/python -m app.workers.inbox_worker
+```
+
+Consume `core.inbox` (todo lo que publican los módulos) y `q.dlq` (lo que los
+consumidores rechazaron), y reintenta las entregas diferidas.
 
 ---
 
-## Guion de prueba manual
+## Documentación
 
-En Swagger, primero `POST /api/v1/auth/login`, copiá el `accessToken` y pegalo en **Authorize**.
+| Documento | Para quién |
+|---|---|
+| [docs/api-para-el-frontend.md](docs/api-para-el-frontend.md) | **El que hace el dashboard.** Todos los endpoints con ejemplos de respuesta y notas de UI. |
+| [docs/eventos.md](docs/eventos.md) | **Los otros 8 equipos.** Cómo publicar, consumir y suscribirse. |
+| [docs/desalineaciones.md](docs/desalineaciones.md) | **Todos.** Los 8 puntos donde los nombres de eventos no coinciden entre equipos. |
+| `GET /docs` | Swagger completo, navegable. |
 
-**1. Publicar un evento válido** — `POST /api/v1/events`
+---
 
-```json
-{
-  "eventId": "11111111-2222-3333-4444-555555555556",
-  "eventType": "ReclamoDerivado",
-  "eventVersion": "1.0",
-  "occurredAt": "2026-08-04T10:30:00-03:00",
-  "sourceModule": "atencion-ciudadana",
-  "correlationId": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-  "data": { "reclamoId": "RC-2026-00184", "areaDestino": "obras", "prioridad": "ALTA" }
-}
+## Cómo funciona
+
+### Recorrido de un evento
+
+```
+publishers ──► muni.inbox ──► core.inbox     (durable: si el Core se cae, nada se pierde)
+                                  │
+                     [1. ¿eventId repetido? → duplicado, no hace nada
+                      2. ¿el sobre está bien formado?
+                      3. ¿el tipo declaró schema? → validar el data
+                      4. guardar el sobre como evidencia
+                      5. buscar suscripciones activas y entregar]
+                                  ▼
+                            muni.events (routing key = cola destino)
+                                  │
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+                 q.obras                    q.rentas
+                    │ el consumidor hace nack
+                    ▼
+        muni.retry.5s / 30s / 2m / 10m ──(TTL)──► vuelve a muni.events
+                    │ agotados los 4 intentos
+                    ▼
+              muni.dlx ──► q.dlq ──► [tabla dead_letters → dashboard]
 ```
 
-→ `202` y `routedTo: ["obras","habilitaciones","ambiente","transito","desarrollo-social"]`.
-Esas son las suscripciones que el enunciado declara para `ReclamoDerivado`.
+**Por qué `core.inbox` y no un topic compartido:** con el inbox el Core ve todo
+antes que nadie, así puede guardar evidencia y decidir el ruteo. Y como la cola es
+durable, si el Core está caído los módulos **siguen publicando sin error**: el
+broker hace de buffer y al volver el Core drena la cola.
 
-**2. Idempotencia** — mandá el mismo JSON otra vez → `200` con `duplicate: true` y **sin** entregas nuevas.
+**El backoff sin scheduler:** cada cola de espera tiene un `x-message-ttl` y su
+`x-dead-letter-exchange` apunta de vuelta a `muni.events`. El mensaje entra, se
+queda quieto lo que dure el TTL, vence, y RabbitMQ lo devuelve conservando su
+routing key original — que es la cola destino. No hay ningún proceso durmiendo.
 
-**3. Contrato inválido** — cambiá el `eventId` y dejá `"data": {}` → `422` con `SCHEMA_VIOLATION` y el
-campo que falta. El evento **no se pierde**: aparece en `GET /api/v1/dlq`.
+### Tres capas en el backend
 
-**4. Fecha sin zona horaria** — poné `"occurredAt": "2026-08-04T10:30:00"` → `422`. Un timestamp sin
-offset es ambiguo entre módulos desplegados por separado, así que se rechaza.
+```
+app/api/v1/        PRESENTACIÓN    routers, DTOs, códigos HTTP
+app/services/      NEGOCIO         hub, registry, DLQ, estadísticas
+app/repositories/  ACCESO A DATOS  queries SQLAlchemy
+app/messaging/     INFRA           broker detrás de una interfaz abstracta
+```
 
-**5. Tipo no registrado** — `"eventType": "EventoInventado"` → `422` con `UNKNOWN_EVENT_TYPE`, y a la DLQ.
+Sin saltos de capa: la presentación nunca toca un repositorio y el negocio nunca
+importa `Request`. Los servicios dependen de la interfaz `Broker`, no de
+`aio-pika`, así el hub corre con RabbitMQ o con un broker en memoria sin cambiar
+lógica.
 
-**6. Reintento desde la DLQ** — `GET /api/v1/dlq`, tomá el `id` del `UNKNOWN_EVENT_TYPE`, registrá el
-tipo con `POST /api/v1/event-types` + su versión, y después `POST /api/v1/dlq/{id}/retry`.
-Se reprocesa el evento ya guardado y queda auditado en `GET /api/v1/dlq/{id}/audit`.
+### Dos decisiones que definen el módulo
 
-**7. Notificación end-to-end** — publicá un `ReclamoResuelto` con `"email": "vecino@example.com"` en
-`data`. Mirá `GET /api/v1/notifications` (queda `SENT`, simulado porque no hay SMTP) y después
-`GET /api/v1/events/journey/{correlationId}`: vas a ver `ReclamoResuelto` **y** el
-`NotificacionEnviada` que el Core publicó en su propio hub.
+**1. Un tipo de evento que nadie declaró no se rechaza.** Se registra solo y queda
+marcado como `discovered`. Los equipos todavía están alineando nombres, y trabar
+la integración por un typo sería peor que dejarlo pasar y mostrarlo en el
+dashboard.
 
-**8. Provisión de identidad** — publicá un `CiudadanoRegistrado` con
-`data: {"ciudadanoId":"CIU-9001","nombreCompleto":"Ana Perez","email":"ana@example.com"}`.
-Después `GET /api/v1/users?query=ana`: el Core creó la cuenta con rol `CIUDADANO` y sin contraseña.
-El dato personal sigue siendo de Ciudadanos; el Core solo administra la credencial.
+**2. La validación del `data` es opcional, por tipo.** Sin JSON Schema el evento
+pasa sin que lo miren (pasamanos puro). Con schema se valida la estructura y lo
+que no cumple va a la DLQ con el campo exacto. Así cada equipo activa la red de
+contención cuando está listo, sin frenar a los demás.
 
-**9. Compatibilidad de contratos** — `POST /api/v1/event-types/{id}/compatibility-check` con un schema
-que agregue un campo requerido → lo clasifica `FORWARD` y explica qué rompe y en qué dirección.
+### Lo que el pasamanos sí detecta
 
-**10. Permisos por rol** — logueate como `auditor@` y probá `POST /api/v1/dlq/{id}/retry` → `403`
-con el detalle de qué permiso falta.
+No valida reglas de negocio, pero ve el mapa completo de quién publica qué y quién
+consume qué. Cruzando esas listas encuentra los agujeros de integración solo:
+eventos que alguien publica y nadie escucha, nombres sospechosamente parecidos
+(`debtOverdue` vs `overdueDebt`), tipos que aparecieron sin declararse.
 
-**11. Tableros** — `GET /api/v1/monitoring/dashboard/technical` y `.../communications`.
-
-**12. Catálogo generado** — `GET /api/v1/event-types/catalog.md` devuelve los 101 tipos documentados
-con sus schemas. Es el documento que consumen los otros 8 equipos.
+`GET /api/v1/dashboard/integration-alerts` — hoy encuentra 21 problemas reales del
+board, incluidos dos que no habíamos visto a mano.
 
 ---
 
 ## Configuración
 
-Todo sale de `backend/.env`. Por defecto arranca en el modo más liviano:
+Todo sale de `backend/.env`.
 
-| Variable | Default | Alternativa real |
+| Variable | Default | Producción |
 |---|---|---|
-| `DATABASE_URL` | SQLite (`./muni_core.db`) | `postgresql+asyncpg://postgres@localhost:5432/muni_core` |
-| `RABBITMQ_URL` | `memory://` (broker en memoria) | `amqp://guest:guest@localhost:5672/` |
+| `DATABASE_URL` | SQLite (`./muni_core.db`) | `postgresql+asyncpg://...` |
+| `RABBITMQ_URL` | `memory://` | `amqp://...` |
+| `JWT_PRIVATE_KEY` | se genera efímera | **obligatoria** |
 
-El broker en memoria rutea de verdad (exchanges, colas, bindings, comodines), así que el hub se
-prueba completo. Lo que no da es persistencia entre reinicios ni consumidores externos.
+El broker en memoria rutea de verdad (exchanges, colas, bindings, comodines), así
+que el hub se prueba completo sin instalar nada. Lo que no da es persistencia
+entre reinicios ni consumidores externos.
 
-### Pasar a Postgres + RabbitMQ
+### Postgres + RabbitMQ
 
 Ya están instalados con Homebrew:
 
 ```bash
 brew services start postgresql@17 && brew services start rabbitmq
-```
-
-```bash
 /opt/homebrew/opt/postgresql@17/bin/createdb muni_core
 ```
 
-Después, en `backend/.env`, descomentá las dos líneas de `DATABASE_URL` y `RABBITMQ_URL` reales,
-comentá las de SQLite y `memory://`, y volvé a correr `python -m app.seeds`.
+Descomentá las dos líneas reales en `backend/.env`, comentá las de SQLite y
+`memory://`, y volvé a correr el seed. Consola de RabbitMQ:
+http://localhost:15672 (guest/guest).
 
-Consola de RabbitMQ: http://localhost:15672 (guest/guest) — sirve para ver las colas y la DLQ a ojo.
+### Antes de desplegar
+
+- [ ] `JWT_PRIVATE_KEY` configurada — sin ella se genera un par RSA efímero y los
+      tokens se invalidan en cada reinicio (en producción el arranque falla).
+- [ ] `ENVIRONMENT=production`, `DEBUG=false`
+- [ ] `CORS_ORIGINS` con el dominio del dashboard
+- [ ] `DATABASE_URL` y `RABBITMQ_URL` a los servicios gestionados
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out core.key
+```
 
 ---
 
-## Arquitectura
+## Estado
 
-Tres capas estrictas en el backend, sin saltos:
+**Backend completo:** 39 endpoints, 8 tablas, Swagger documentado, verificado
+end-to-end (idempotencia, validación de estructura, DLQ con reintento auditado,
+scope de datos por módulo, alertas de integración).
 
-```
-app/api/v1/       PRESENTACIÓN   routers, DTOs, códigos HTTP, validación de formato
-app/services/     NEGOCIO        casos de uso, transiciones de estado, publicación y consumo
-app/repositories/ ACCESO DATOS   queries SQLAlchemy, transacciones, mapeo de entidades
-app/messaging/    INFRA          broker detrás de una interfaz abstracta (RabbitMQ | memoria)
-```
-
-La capa de presentación nunca toca un repositorio y la de negocio nunca importa `Request`.
-Los servicios dependen de la interfaz `Broker`, no de `aio-pika`.
-
-### Topología de mensajería
-
-```
-publishers ──► muni.inbox ──► core.inbox        (durable: si el Core se cae, nada se pierde)
-                                  │
-                           [validar contrato + persistir evidencia + rutear]
-                                  ▼
-                            muni.events (rk = cola destino)
-                                  │
-                    ┌─────────────┴─────────────┐
-                    ▼                           ▼
-                 q.obras                  q.core.internal
-                    │ el consumidor rechaza
-                    ▼
-        muni.retry.5s / 30s / 2m / 10m  ──(TTL)──► vuelve a muni.events
-                    │ agotados los reintentos
-                    ▼
-              muni.dlx ──► q.dlq ──► [tabla dead_letters]
-```
-
-**La regla que ordena todo el módulo:** el Core no implementa reglas de negocio de las demás áreas.
-Valida el sobre y el contrato; nunca interpreta el contenido de `data`. Las notificaciones se
-disparan por configuración en `notification_rules`, no con `if eventType == ...` en el código.
-
----
-
-## Contrato del sobre de eventos
-
-Lo comparten los 9 módulos. Disponible en vivo en `GET /api/v1/events-meta/envelope-schema`.
-
-```json
-{
-  "eventId":      "uuid",                          // clave de idempotencia
-  "eventType":    "ReclamoDerivado",
-  "eventVersion": "1.0",
-  "occurredAt":   "2026-08-04T12:34:56.789-03:00", // offset OBLIGATORIO
-  "sourceModule": "atencion-ciudadana",
-  "correlationId": "uuid",                         // opcional, habilita la vista de journey
-  "causationId":   "uuid",                         // opcional
-  "data": { }                                      // validado contra el JSON Schema de la versión
-}
-```
-
-### Cómo se conecta un módulo
-
-1. Un admin le crea la cuenta de servicio (`POST /api/v1/api-clients`). El seed ya creó una por módulo.
-2. El módulo se autentica con `POST /api/v1/auth/token` (client_credentials).
-3. Registra sus tipos de evento y contratos, y se declara productor o consumidor.
-4. Publica en `muni.inbox`, o por HTTP con `POST /api/v1/events`.
-5. Para validar tokens **no llama al Core**: cachea `GET /.well-known/jwks.json` y valida offline.
-   Es lo que hace que una caída del Core no bloquee el acceso a la plataforma.
-
----
-
-## Pendiente
-
-- Frontend Next.js (panel administrativo con los dos tableros)
-- Suite de tests con cobertura ≥85% en BE y FE
-- `docs/` completo (arquitectura, integración para los otros equipos) y colección Postman
-- Configuración de deploy (Render + Vercel + Neon + CloudAMQP)
+**Pendiente:** el dashboard (lo hace otra persona, con
+[docs/api-para-el-frontend.md](docs/api-para-el-frontend.md)), la suite de tests y
+la configuración de deploy.

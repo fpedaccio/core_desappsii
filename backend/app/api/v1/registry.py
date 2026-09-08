@@ -1,26 +1,35 @@
-"""Endpoints del registry de integracion y de la topologia de mensajeria."""
+"""Registry: modulos, tipos de evento, suscripciones y publicaciones.
+
+Es donde cada equipo se autoadministra: se suscribe a lo que quiere recibir y
+declara lo que publica. Un modulo solo puede tocar lo suyo; el admin puede
+hacerlo por cualquiera.
+"""
 
 from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Query, status
 
-from app.api.deps import RegistryDep, require_permissions
-from app.api.v1.schemas.integration import (
+from app.api.deps import AdminDep, AuthDep, CallerDep, RegistryDep, StatsDep
+from app.api.v1.schemas.common import MessageResponse, PageResponse
+from app.api.v1.schemas.dto import (
+    EventTypeCreate,
+    EventTypeMapEntry,
+    EventTypeResponse,
     ModuleCreate,
     ModuleResponse,
     ModuleUpdate,
-    ProducerCreate,
-    ProducerResponse,
+    PublicationCreate,
+    PublicationResponse,
+    SchemaUpdate,
+    SecretResponse,
     SubscriptionCreate,
     SubscriptionResponse,
-    SubscriptionUpdate,
     TopologyResponse,
 )
-from app.core import permissions as perms
 
-router = APIRouter(prefix="/registry", tags=["Registry de integracion"])
+router = APIRouter(tags=["Registry"])
 
 
 # ----------------------------------------------------------------------
@@ -29,100 +38,165 @@ router = APIRouter(prefix="/registry", tags=["Registry de integracion"])
 @router.get(
     "/modules",
     response_model=list[ModuleResponse],
-    dependencies=[Depends(require_permissions(perms.REGISTRY_READ))],
-    summary="Listar modulos registrados",
+    summary="Listar modulos",
+    description="Los 9 modulos de la plataforma, con su cola y su cantidad de suscripciones.",
 )
-async def list_modules(service: RegistryDep) -> list[ModuleResponse]:
-    return [ModuleResponse.of(module) for module in await service.list_modules()]
+async def list_modules(caller: CallerDep, registry: RegistryDep) -> list[ModuleResponse]:
+    return [ModuleResponse.of(m) for m in await registry.list_modules()]
 
 
 @router.post(
     "/modules",
-    response_model=ModuleResponse,
+    response_model=SecretResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permissions(perms.REGISTRY_WRITE))],
-    summary="Registrar un modulo",
+    summary="Dar de alta un modulo",
     description=(
-        "Da de alta uno de los 9 modulos de la plataforma. El `name` es el "
-        "identificador tecnico que despues viaja como `sourceModule` en sus eventos, "
-        "y determina su cola destino (`q.<name>` por defecto)."
+        "Solo el administrador. Devuelve el secret en claro **una sola vez**: el "
+        "Core guarda unicamente su hash."
     ),
 )
-async def register_module(payload: ModuleCreate, service: RegistryDep) -> ModuleResponse:
-    module = await service.register_module(
+async def create_module(
+    payload: ModuleCreate, admin: AdminDep, registry: RegistryDep, auth: AuthDep
+) -> SecretResponse:
+    module = await registry.register_module(
         name=payload.name,
         display_name=payload.display_name,
-        description=payload.description,
         team=payload.team,
-        base_url=payload.base_url,
-        health_url=payload.health_url,
+        description=payload.description,
         contact_email=payload.contact_email,
-        queue_name=payload.queue_name,
     )
-    return ModuleResponse.of(module)
+    secret = auth.rotate_secret(module)
+    return SecretResponse(module=module.name, secret=secret)
 
 
 @router.patch(
-    "/modules/{module_id}",
+    "/modules/{module_name}",
     response_model=ModuleResponse,
-    dependencies=[Depends(require_permissions(perms.REGISTRY_WRITE))],
     summary="Editar un modulo",
     description=(
-        "Desactivar un modulo hace que el hub deje de entregarle eventos, sin borrar "
-        "sus suscripciones ni su cola: cuando vuelva, se reactiva y sigue."
+        "Solo el administrador. Dar de baja un modulo deja de entregarle eventos "
+        "sin borrar sus suscripciones: quedan declaradas para cuando vuelva."
     ),
 )
 async def update_module(
-    module_id: uuid.UUID, payload: ModuleUpdate, service: RegistryDep
+    module_name: str, payload: ModuleUpdate, admin: AdminDep, registry: RegistryDep
 ) -> ModuleResponse:
-    module = await service.update_module(
-        module_id,
+    module = await registry.update_module(
+        module_name,
         display_name=payload.display_name,
-        description=payload.description,
         team=payload.team,
-        base_url=payload.base_url,
-        health_url=payload.health_url,
+        description=payload.description,
         contact_email=payload.contact_email,
         active=payload.active,
     )
     return ModuleResponse.of(module)
 
 
+@router.post(
+    "/modules/{module_name}/rotate-secret",
+    response_model=SecretResponse,
+    summary="Rotar el secret de un modulo",
+    description="Solo el administrador. El secret anterior deja de servir en el acto.",
+)
+async def rotate_secret(
+    module_name: str, admin: AdminDep, registry: RegistryDep, auth: AuthDep
+) -> SecretResponse:
+    module = await registry.get_module_by_name(module_name)
+    secret = auth.rotate_secret(module)
+    return SecretResponse(module=module.name, secret=secret)
+
+
 # ----------------------------------------------------------------------
-# Productores
+# Tipos de evento
 # ----------------------------------------------------------------------
 @router.get(
-    "/producers",
-    response_model=list[ProducerResponse],
-    dependencies=[Depends(require_permissions(perms.REGISTRY_READ))],
-    summary="Listar productores declarados",
+    "/event-types",
+    response_model=PageResponse[EventTypeResponse],
+    summary="Listar tipos de evento",
+    description=(
+        "Todos los tipos que circulan por el hub. Los marcados `discovered` "
+        "aparecieron solos al ser publicados sin que nadie los declarara."
+    ),
 )
-async def list_producers(service: RegistryDep) -> list[ProducerResponse]:
-    return [ProducerResponse.of(producer) for producer in await service.list_producers()]
+async def list_event_types(
+    caller: CallerDep,
+    registry: RegistryDep,
+    query: str | None = Query(default=None),
+    owner_module: str | None = Query(default=None, alias="ownerModule"),
+    discovered: bool | None = Query(
+        default=None, description="true = solo los que se auto-registraron"
+    ),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=50, ge=1, le=200),
+) -> PageResponse[EventTypeResponse]:
+    result = await registry.search_event_types(
+        query=query, owner_module=owner_module, discovered=discovered, page=page, size=size
+    )
+    return PageResponse.build(result, EventTypeResponse.of)
+
+
+@router.get(
+    "/event-types/map",
+    response_model=list[EventTypeMapEntry],
+    summary="El mapa de integracion",
+    description=(
+        "Por cada tipo de evento: quien lo declara como publicado, quien esta "
+        "suscripto y cuantos llegaron. Es la vista que muestra los agujeros de la "
+        "integracion: publicado por alguien y consumido por nadie, o al reves."
+    ),
+)
+async def event_type_map(caller: CallerDep, stats: StatsDep) -> list[EventTypeMapEntry]:
+    return [EventTypeMapEntry(**row) for row in await stats.event_type_map()]
+
+
+@router.get(
+    "/event-types/{name}",
+    response_model=EventTypeResponse,
+    summary="Ver un tipo de evento",
+)
+async def get_event_type(name: str, caller: CallerDep, registry: RegistryDep) -> EventTypeResponse:
+    return EventTypeResponse.of(await registry.get_event_type(name))
 
 
 @router.post(
-    "/producers",
-    response_model=ProducerResponse,
+    "/event-types",
+    response_model=EventTypeResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permissions(perms.REGISTRY_WRITE))],
-    summary="Declarar que un modulo publica un tipo de evento",
+    summary="Declarar un tipo de evento",
+    description=(
+        "Registra un tipo con su descripcion y, opcionalmente, su JSON Schema.\n\n"
+        "**El schema es opcional.** Sin schema el evento pasa sin que le miren el "
+        "`data` (pasamanos puro). Con schema se valida la estructura del payload y "
+        "lo que no cumple va a la DLQ con el detalle del campo.\n\n"
+        "Si el tipo ya existia porque se auto-registro al aparecer por el hub, se "
+        "le completan los datos y se le quita la marca `discovered`."
+    ),
 )
-async def declare_producer(payload: ProducerCreate, service: RegistryDep) -> ProducerResponse:
-    producer = await service.declare_producer(
-        module_name=payload.module_name, event_type_name=payload.event_type
+async def declare_event_type(
+    payload: EventTypeCreate, caller: CallerDep, registry: RegistryDep
+) -> EventTypeResponse:
+    event_type = await registry.declare_event_type(
+        name=payload.name,
+        owner_module=payload.owner_module or caller.module,
+        description=payload.description,
+        json_schema=payload.json_schema,
     )
-    return ProducerResponse.of(producer)
+    return EventTypeResponse.of(event_type)
 
 
-@router.delete(
-    "/producers/{producer_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_permissions(perms.REGISTRY_WRITE))],
-    summary="Quitar una declaracion de productor",
+@router.put(
+    "/event-types/{name}/schema",
+    response_model=EventTypeResponse,
+    summary="Activar o quitar la validacion de estructura",
+    description=(
+        "Define el JSON Schema con el que se valida el `data` de este tipo. "
+        "Mandar `null` desactiva la validacion y el evento vuelve a pasar sin mirar."
+    ),
 )
-async def remove_producer(producer_id: uuid.UUID, service: RegistryDep) -> None:
-    await service.remove_producer(producer_id)
+async def set_schema(
+    name: str, payload: SchemaUpdate, caller: CallerDep, registry: RegistryDep
+) -> EventTypeResponse:
+    return EventTypeResponse.of(await registry.set_schema(name, json_schema=payload.json_schema))
 
 
 # ----------------------------------------------------------------------
@@ -131,51 +205,65 @@ async def remove_producer(producer_id: uuid.UUID, service: RegistryDep) -> None:
 @router.get(
     "/subscriptions",
     response_model=list[SubscriptionResponse],
-    dependencies=[Depends(require_permissions(perms.REGISTRY_READ))],
     summary="Listar suscripciones",
-    description="Es la tabla que gobierna el ruteo del hub.",
+    description="Un modulo ve las suyas; el administrador ve todas.",
 )
-async def list_subscriptions(service: RegistryDep) -> list[SubscriptionResponse]:
-    return [SubscriptionResponse.of(sub) for sub in await service.list_subscriptions()]
+async def list_subscriptions(
+    caller: CallerDep, registry: RegistryDep
+) -> list[SubscriptionResponse]:
+    subscriptions = (
+        await registry.list_subscriptions()
+        if caller.is_admin
+        else await registry.list_subscriptions_for(caller.module)
+    )
+    return [SubscriptionResponse.of(s) for s in subscriptions]
 
 
 @router.post(
     "/subscriptions",
     response_model=SubscriptionResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_permissions(perms.REGISTRY_WRITE))],
-    summary="Suscribir un modulo a un tipo de evento",
+    summary="Suscribirse a un tipo de evento",
     description=(
-        "Al crear la suscripcion el Core declara la cola y su binding en el acto, "
-        "para que exista antes de que llegue el primer evento del tipo. Si el broker "
-        "no responde, la suscripcion queda igual registrada y la topologia se aplica "
-        "en el proximo arranque o desde `POST /registry/topology/apply`."
+        "El modulo autenticado empieza a recibir ese tipo en su cola. La cola y su "
+        "binding se declaran en el broker en el acto.\n\n"
+        "Se puede suscribir a un tipo que todavia nadie publico: cuando llegue el "
+        "primero, ya tiene destino."
     ),
 )
-async def subscribe(payload: SubscriptionCreate, service: RegistryDep) -> SubscriptionResponse:
-    subscription = await service.subscribe(
-        module_name=payload.module_name,
+async def subscribe(
+    payload: SubscriptionCreate, caller: CallerDep, registry: RegistryDep
+) -> SubscriptionResponse:
+    subscription = await registry.subscribe(
+        module_name=payload.module or caller.module,
         event_type_name=payload.event_type,
-        queue_name=payload.queue_name,
         max_attempts=payload.max_attempts,
+        actor_module=caller.module,
+        actor_is_admin=caller.is_admin,
     )
     return SubscriptionResponse.of(subscription)
 
 
-@router.patch(
-    "/subscriptions/{subscription_id}",
+@router.post(
+    "/subscriptions/{subscription_id}/toggle",
     response_model=SubscriptionResponse,
-    dependencies=[Depends(require_permissions(perms.REGISTRY_WRITE))],
-    summary="Editar una suscripcion",
+    summary="Pausar o reactivar una suscripcion",
+    description=(
+        "Pausar deja de entregar sin borrar la suscripcion. Util cuando un modulo "
+        "se va a desplegar y no quiere acumular fallos."
+    ),
 )
-async def update_subscription(
-    subscription_id: uuid.UUID, payload: SubscriptionUpdate, service: RegistryDep
+async def toggle_subscription(
+    subscription_id: uuid.UUID,
+    caller: CallerDep,
+    registry: RegistryDep,
+    active: bool = Query(description="true reactiva, false pausa"),
 ) -> SubscriptionResponse:
-    subscription = await service.update_subscription(
+    subscription = await registry.set_subscription_active(
         subscription_id,
-        active=payload.active,
-        max_attempts=payload.max_attempts,
-        queue_name=payload.queue_name,
+        active=active,
+        actor_module=caller.module,
+        actor_is_admin=caller.is_admin,
     )
     return SubscriptionResponse.of(subscription)
 
@@ -183,11 +271,60 @@ async def update_subscription(
 @router.delete(
     "/subscriptions/{subscription_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_permissions(perms.REGISTRY_WRITE))],
-    summary="Eliminar una suscripcion",
+    summary="Cancelar una suscripcion",
 )
-async def unsubscribe(subscription_id: uuid.UUID, service: RegistryDep) -> None:
-    await service.unsubscribe(subscription_id)
+async def unsubscribe(subscription_id: uuid.UUID, caller: CallerDep, registry: RegistryDep) -> None:
+    await registry.unsubscribe(
+        subscription_id, actor_module=caller.module, actor_is_admin=caller.is_admin
+    )
+
+
+# ----------------------------------------------------------------------
+# Publicaciones
+# ----------------------------------------------------------------------
+@router.get(
+    "/publications",
+    response_model=list[PublicationResponse],
+    summary="Listar publicaciones declaradas",
+)
+async def list_publications(caller: CallerDep, registry: RegistryDep) -> list[PublicationResponse]:
+    return [PublicationResponse.of(p) for p in await registry.list_publications()]
+
+
+@router.post(
+    "/publications",
+    response_model=PublicationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Declarar que publicas un tipo de evento",
+    description=(
+        "Es **documentacion, no un permiso**: publicar un evento no declarado "
+        "funciona igual. Existe para que el mapa de integracion pueda mostrar quien "
+        "manda que, y para detectar los eventos que nadie consume."
+    ),
+)
+async def declare_publication(
+    payload: PublicationCreate, caller: CallerDep, registry: RegistryDep
+) -> PublicationResponse:
+    publication = await registry.declare_publication(
+        module_name=payload.module or caller.module,
+        event_type_name=payload.event_type,
+        actor_module=caller.module,
+        actor_is_admin=caller.is_admin,
+    )
+    return PublicationResponse.of(publication)
+
+
+@router.delete(
+    "/publications/{publication_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Quitar una publicacion declarada",
+)
+async def remove_publication(
+    publication_id: uuid.UUID, caller: CallerDep, registry: RegistryDep
+) -> None:
+    await registry.remove_publication(
+        publication_id, actor_module=caller.module, actor_is_admin=caller.is_admin
+    )
 
 
 # ----------------------------------------------------------------------
@@ -196,43 +333,30 @@ async def unsubscribe(subscription_id: uuid.UUID, service: RegistryDep) -> None:
 @router.get(
     "/topology",
     response_model=TopologyResponse,
-    dependencies=[Depends(require_permissions(perms.REGISTRY_READ))],
-    summary="Ver la topologia que corresponde al registry",
+    summary="Ver la topologia de mensajeria",
     description=(
-        "Exchanges, colas y bindings derivados de las suscripciones activas, sin "
-        "tocar el broker. Incluye las colas de reintento por escalon y la DLQ."
+        "Los exchanges, colas y bindings que corresponden al estado actual del "
+        "registry. Se deriva de las suscripciones: no hay nada escrito a mano."
     ),
 )
-async def get_topology(service: RegistryDep) -> TopologyResponse:
-    topology = await service.planned_topology()
-    return TopologyResponse.of(topology, applied=False)
+async def get_topology(caller: CallerDep, registry: RegistryDep) -> TopologyResponse:
+    return TopologyResponse.of(await registry.planned_topology())
 
 
 @router.post(
     "/topology/apply",
-    response_model=TopologyResponse,
-    dependencies=[Depends(require_permissions(perms.TOPOLOGY_APPLY))],
-    summary="Declarar la topologia en el broker",
+    response_model=MessageResponse,
+    summary="Aplicar la topologia en el broker",
     description=(
-        "Idempotente: se puede reaplicar cuantas veces sea necesario. Es lo que se "
-        "corre cuando el broker vuelve despues de una caida."
+        "Solo el administrador. Es idempotente. Sirve cuando el broker estuvo caido "
+        "mientras se creaban suscripciones."
     ),
 )
-async def apply_topology(service: RegistryDep) -> TopologyResponse:
-    topology = await service.apply_topology()
-    return TopologyResponse.of(topology, applied=True)
-
-
-@router.post(
-    "/core-subscriptions/sync",
-    response_model=list[str],
-    dependencies=[Depends(require_permissions(perms.REGISTRY_WRITE))],
-    summary="Sincronizar las suscripciones propias del Core",
-    description=(
-        "Suscribe al Core a los eventos de identidad (para provisionar cuentas) y a "
-        "los tipos que tengan una regla de notificacion configurada. Devuelve los "
-        "tipos que se agregaron en esta corrida."
-    ),
-)
-async def sync_core_subscriptions(service: RegistryDep) -> list[str]:
-    return await service.sync_core_subscriptions()
+async def apply_topology(admin: AdminDep, registry: RegistryDep) -> MessageResponse:
+    topology = await registry.apply_topology()
+    return MessageResponse(
+        message=(
+            f"Topologia aplicada: {len(topology.exchanges)} exchange(s), "
+            f"{len(topology.queues)} cola(s), {len(topology.bindings)} binding(s)."
+        )
+    )

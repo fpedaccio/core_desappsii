@@ -75,9 +75,7 @@ class BaseRepository(Generic[ModelT]):
             stmt = stmt.filter_by(**filters)
         return list((await self.session.execute(stmt)).scalars().all())
 
-    async def paginate(
-        self, stmt: Select, *, page: int = 1, size: int = 20
-    ) -> Page[ModelT]:
+    async def paginate(self, stmt: Select, *, page: int = 1, size: int = 20) -> Page[ModelT]:
         page = max(page, 1)
         size = min(max(size, 1), MAX_PAGE_SIZE)
 

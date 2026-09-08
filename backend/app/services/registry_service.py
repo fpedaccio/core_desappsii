@@ -1,32 +1,35 @@
-"""Registry de integracion: modulos, productores, suscripciones y topologia.
+"""Registry: modulos, tipos de evento y suscripciones.
 
-El registry es la fuente de verdad del ruteo. Cuando cambia una suscripcion, la
-topologia del broker se recalcula desde estas tablas: no hay colas ni bindings
-escritos a mano en ningun lado.
+Es la fuente de verdad del ruteo. Cuando cambia una suscripcion, la topologia del
+broker se recalcula desde estas tablas: no hay colas ni bindings escritos a mano.
 """
 
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import structlog
 
-from app.core.errors import ConflictError, ExternalUnavailableError, NotFoundError
+from app.core.errors import (
+    ConflictError,
+    ExternalUnavailableError,
+    ForbiddenError,
+    NotFoundError,
+)
 from app.messaging.broker import Broker
-from app.messaging.topology import CORE_INTERNAL_QUEUE, Topology, full_topology
-from app.models.contracts import Producer, RegisteredModule, Subscription
-from app.repositories.contract_repository import (
+from app.messaging.topology import Topology, full_topology
+from app.models.registry import EventType, ModuleAccount, Publication, Subscription
+from app.repositories.base import Page
+from app.repositories.registry_repository import (
     EventTypeRepository,
     ModuleRepository,
-    ProducerRepository,
+    PublicationRepository,
     SubscriptionRepository,
 )
-from app.repositories.notification_repository import NotificationRuleRepository
-from app.services.audit_service import AuditService
+from app.services.validation import assert_valid_schema
 
 logger = structlog.get_logger(__name__)
-
-CORE_MODULE_NAME = "core"
 
 
 class RegistryService:
@@ -34,35 +37,25 @@ class RegistryService:
         self,
         *,
         module_repo: ModuleRepository,
-        producer_repo: ProducerRepository,
-        subscription_repo: SubscriptionRepository,
         event_type_repo: EventTypeRepository,
-        rule_repo: NotificationRuleRepository,
+        subscription_repo: SubscriptionRepository,
+        publication_repo: PublicationRepository,
         broker: Broker,
-        audit: AuditService,
     ) -> None:
         self.module_repo = module_repo
-        self.producer_repo = producer_repo
-        self.subscription_repo = subscription_repo
         self.event_type_repo = event_type_repo
-        self.rule_repo = rule_repo
+        self.subscription_repo = subscription_repo
+        self.publication_repo = publication_repo
         self.broker = broker
-        self.audit = audit
 
     # ------------------------------------------------------------------
     # Modulos
     # ------------------------------------------------------------------
-    async def list_modules(self) -> list[RegisteredModule]:
+    async def list_modules(self) -> list[ModuleAccount]:
         return await self.module_repo.list_ordered()
 
-    async def get_module(self, module_id: uuid.UUID) -> RegisteredModule:
-        module = await self.module_repo.get(module_id)
-        if module is None:
-            raise NotFoundError(f"No existe el modulo {module_id}.")
-        return module
-
-    async def get_module_by_name(self, name: str) -> RegisteredModule:
-        module = await self.module_repo.get_by_name(_normalize_name(name))
+    async def get_module_by_name(self, name: str) -> ModuleAccount:
+        module = await self.module_repo.get_by_name(name)
         if module is None:
             raise NotFoundError(f"No existe el modulo '{name}'.")
         return module
@@ -72,113 +65,126 @@ class RegistryService:
         *,
         name: str,
         display_name: str,
-        description: str = "",
         team: str = "",
-        base_url: str | None = None,
-        health_url: str | None = None,
+        description: str = "",
         contact_email: str | None = None,
-        queue_name: str | None = None,
-    ) -> RegisteredModule:
-        normalized = _normalize_name(name)
+        is_admin: bool = False,
+    ) -> ModuleAccount:
+        normalized = name.strip().lower()
         if await self.module_repo.get_by_name(normalized) is not None:
             raise ConflictError(f"Ya existe el modulo '{normalized}'.")
 
-        module = RegisteredModule(
+        module = ModuleAccount(
             name=normalized,
             display_name=display_name.strip(),
-            description=description,
             team=team,
-            base_url=base_url,
-            health_url=health_url,
+            description=description,
             contact_email=contact_email,
-            queue_name=queue_name or f"q.{normalized}",
+            is_admin=is_admin,
+            active=True,
+            queue_name=f"q.{normalized}",
         )
         self.module_repo.add(module)
         await self.module_repo.flush()
-
-        self.audit.record(
-            action="MODULE_REGISTERED",
-            entity_type="RegisteredModule",
-            entity_id=str(module.id),
-            summary=f"Modulo '{normalized}' registrado con cola {module.effective_queue_name}.",
-        )
-        logger.info("module_registered", module=normalized, queue=module.effective_queue_name)
+        logger.info("module_registered", module=normalized)
         return module
 
     async def update_module(
         self,
-        module_id: uuid.UUID,
+        module_name: str,
         *,
         display_name: str | None = None,
-        description: str | None = None,
         team: str | None = None,
-        base_url: str | None = None,
-        health_url: str | None = None,
+        description: str | None = None,
         contact_email: str | None = None,
         active: bool | None = None,
-    ) -> RegisteredModule:
-        module = await self.get_module(module_id)
+    ) -> ModuleAccount:
+        module = await self.get_module_by_name(module_name)
         if display_name is not None:
             module.display_name = display_name.strip()
-        if description is not None:
-            module.description = description
         if team is not None:
             module.team = team
-        if base_url is not None:
-            module.base_url = base_url
-        if health_url is not None:
-            module.health_url = health_url
+        if description is not None:
+            module.description = description
         if contact_email is not None:
             module.contact_email = contact_email
         if active is not None:
-            # Desactivar un modulo deja de entregarle eventos sin tocar la
-            # topologia: sus suscripciones siguen declaradas para cuando vuelva.
+            # Dar de baja deja de entregarle eventos sin borrar sus
+            # suscripciones: quedan declaradas para cuando vuelva.
             module.active = active
-
-        self.audit.record(
-            action="MODULE_UPDATED",
-            entity_type="RegisteredModule",
-            entity_id=str(module.id),
-            summary=f"Modulo '{module.name}' actualizado.",
-        )
         return module
 
     # ------------------------------------------------------------------
-    # Productores
+    # Tipos de evento
     # ------------------------------------------------------------------
-    async def list_producers(self) -> list[Producer]:
-        return await self.producer_repo.list_all()
+    async def search_event_types(self, **kwargs: Any) -> Page[EventType]:
+        return await self.event_type_repo.search(**kwargs)
 
-    async def declare_producer(self, *, module_name: str, event_type_name: str) -> Producer:
-        module = await self.get_module_by_name(module_name)
-        event_type = await self._get_event_type(event_type_name)
+    async def list_event_types(self) -> list[EventType]:
+        return await self.event_type_repo.list_ordered()
 
-        existing = await self.producer_repo.find_pair(module.id, event_type.id)
+    async def get_event_type(self, name: str) -> EventType:
+        event_type = await self.event_type_repo.get_by_name(name)
+        if event_type is None:
+            raise NotFoundError(f"No existe el tipo de evento '{name}'.")
+        return event_type
+
+    async def declare_event_type(
+        self,
+        *,
+        name: str,
+        owner_module: str | None = None,
+        description: str = "",
+        json_schema: dict | None = None,
+    ) -> EventType:
+        """Declara un tipo de evento.
+
+        Si ya existia (porque se auto-registro al aparecer por el hub), se le
+        completan los datos y se le quita la marca de `discovered`.
+        """
+        if json_schema:
+            assert_valid_schema(json_schema)
+
+        normalized = name.strip()
+        existing = await self.event_type_repo.get_by_name(normalized)
         if existing is not None:
-            existing.active = True
+            existing.discovered = False
+            if description:
+                existing.description = description
+            if owner_module:
+                existing.owner_module = owner_module.strip().lower()
+            if json_schema is not None:
+                existing.json_schema = json_schema
             return existing
 
-        producer = Producer(module_id=module.id, event_type_id=event_type.id)
-        self.producer_repo.add(producer)
-        await self.producer_repo.flush()
-
-        self.audit.record(
-            action="PRODUCER_DECLARED",
-            entity_type="Producer",
-            entity_id=str(producer.id),
-            summary=f"'{module.name}' declarado productor de '{event_type.name}'.",
+        event_type = EventType(
+            name=normalized,
+            owner_module=owner_module.strip().lower() if owner_module else None,
+            description=description,
+            json_schema=json_schema,
+            discovered=False,
+            total_received=0,
         )
-        return producer
+        self.event_type_repo.add(event_type)
+        await self.event_type_repo.flush()
+        return event_type
 
-    async def remove_producer(self, producer_id: uuid.UUID) -> None:
-        producer = await self.producer_repo.get_required(producer_id)
-        await self.producer_repo.delete(producer)
-        self.audit.record(
-            action="PRODUCER_REMOVED",
-            entity_type="Producer",
-            entity_id=str(producer_id),
-            summary="Declaracion de productor eliminada.",
+    async def set_schema(self, name: str, *, json_schema: dict | None) -> EventType:
+        """Activa o quita la validacion de estructura de un tipo.
+
+        `None` desactiva la validacion: el evento vuelve a pasar sin que le miren
+        el `data`.
+        """
+        event_type = await self.get_event_type(name)
+        if json_schema:
+            assert_valid_schema(json_schema)
+        event_type.json_schema = json_schema
+        logger.info(
+            "event_type_schema_updated",
+            event_type=event_type.name,
+            validating=bool(json_schema),
         )
+        return event_type
 
     # ------------------------------------------------------------------
     # Suscripciones
@@ -186,23 +192,36 @@ class RegistryService:
     async def list_subscriptions(self) -> list[Subscription]:
         return await self.subscription_repo.list_all()
 
+    async def list_subscriptions_for(self, module_name: str) -> list[Subscription]:
+        module = await self.get_module_by_name(module_name)
+        return await self.subscription_repo.list_for_module(module.id)
+
     async def subscribe(
         self,
         *,
         module_name: str,
         event_type_name: str,
-        queue_name: str | None = None,
         max_attempts: int = 4,
+        actor_module: str | None = None,
+        actor_is_admin: bool = False,
     ) -> Subscription:
-        """Suscribe un modulo a un tipo de evento y aplica la topologia."""
+        """Suscribe un modulo a un tipo de evento y aplica la topologia.
+
+        Un modulo solo puede suscribirse a si mismo. El admin puede hacerlo por
+        cualquiera, para poder acomodar la integracion desde el panel.
+        """
+        self._assert_can_act_on(module_name, actor_module, actor_is_admin)
+
         module = await self.get_module_by_name(module_name)
-        event_type = await self._get_event_type(event_type_name)
+        # Suscribirse a un tipo que todavia nadie publico es valido: el equipo se
+        # anticipa y cuando el evento llegue, ya tiene destino.
+        event_type = await self.event_type_repo.get_by_name(event_type_name)
+        if event_type is None:
+            event_type = await self.declare_event_type(name=event_type_name)
 
         existing = await self.subscription_repo.find_pair(module.id, event_type.id)
         if existing is not None:
             existing.active = True
-            if queue_name:
-                existing.queue_name = queue_name
             existing.max_attempts = max_attempts
             await self.apply_topology(raise_on_error=False)
             return existing
@@ -210,85 +229,109 @@ class RegistryService:
         subscription = Subscription(
             module_id=module.id,
             event_type_id=event_type.id,
-            queue_name=queue_name,
             max_attempts=max_attempts,
+            active=True,
         )
         self.subscription_repo.add(subscription)
         await self.subscription_repo.flush()
 
-        self.audit.record(
-            action="SUBSCRIPTION_CREATED",
-            entity_type="Subscription",
-            entity_id=str(subscription.id),
-            summary=(
-                f"'{module.name}' suscripto a '{event_type.name}' "
-                f"(cola {queue_name or module.effective_queue_name})."
-            ),
-        )
-        # La topologia se aplica en el acto para que la cola exista antes de que
-        # llegue el primer evento del tipo suscripto.
+        # Se aplica en el acto para que la cola exista antes del primer evento.
         await self.apply_topology(raise_on_error=False)
+        logger.info("subscribed", module=module.name, event_type=event_type.name)
         return subscription
 
-    async def update_subscription(
+    async def unsubscribe(
         self,
         subscription_id: uuid.UUID,
         *,
-        active: bool | None = None,
-        max_attempts: int | None = None,
-        queue_name: str | None = None,
+        actor_module: str | None = None,
+        actor_is_admin: bool = False,
+    ) -> None:
+        subscription = await self.subscription_repo.get_required(subscription_id)
+        self._assert_can_act_on(subscription.module.name, actor_module, actor_is_admin)
+        await self.subscription_repo.delete(subscription)
+        logger.info(
+            "unsubscribed",
+            module=subscription.module.name,
+            event_type=subscription.event_type.name,
+        )
+
+    async def set_subscription_active(
+        self,
+        subscription_id: uuid.UUID,
+        *,
+        active: bool,
+        actor_module: str | None = None,
+        actor_is_admin: bool = False,
     ) -> Subscription:
         subscription = await self.subscription_repo.get_required(subscription_id)
-        if active is not None:
-            subscription.active = active
-        if max_attempts is not None:
-            subscription.max_attempts = max_attempts
-        if queue_name is not None:
-            subscription.queue_name = queue_name
-
-        self.audit.record(
-            action="SUBSCRIPTION_UPDATED",
-            entity_type="Subscription",
-            entity_id=str(subscription.id),
-            summary=f"Suscripcion {subscription_id} actualizada.",
-        )
+        self._assert_can_act_on(subscription.module.name, actor_module, actor_is_admin)
+        subscription.active = active
         await self.apply_topology(raise_on_error=False)
         return subscription
 
-    async def unsubscribe(self, subscription_id: uuid.UUID) -> None:
-        subscription = await self.subscription_repo.get_required(subscription_id)
-        await self.subscription_repo.delete(subscription)
-        self.audit.record(
-            action="SUBSCRIPTION_REMOVED",
-            entity_type="Subscription",
-            entity_id=str(subscription_id),
-            summary="Suscripcion eliminada.",
-        )
+    # ------------------------------------------------------------------
+    # Publicaciones (documentacion del mapa de eventos)
+    # ------------------------------------------------------------------
+    async def list_publications(self) -> list[Publication]:
+        return await self.publication_repo.list_all()
 
-    async def _get_event_type(self, event_type_name: str):
-        event_type = await self.event_type_repo.get_by_name(event_type_name.strip())
+    async def declare_publication(
+        self,
+        *,
+        module_name: str,
+        event_type_name: str,
+        actor_module: str | None = None,
+        actor_is_admin: bool = False,
+    ) -> Publication:
+        """Declara que un modulo publica un tipo. Es informativo: no es un permiso.
+
+        Publicar un evento no declarado funciona igual. Esto existe para que el
+        dashboard pueda mostrar el mapa de quien manda que.
+        """
+        self._assert_can_act_on(module_name, actor_module, actor_is_admin)
+
+        module = await self.get_module_by_name(module_name)
+        event_type = await self.event_type_repo.get_by_name(event_type_name)
         if event_type is None:
-            raise NotFoundError(
-                f"El tipo de evento '{event_type_name}' no esta en el catalogo. "
-                "Registralo antes de declarar productores o suscripciones."
+            event_type = await self.declare_event_type(
+                name=event_type_name, owner_module=module_name
             )
-        return event_type
+
+        existing = await self.publication_repo.find_pair(module.id, event_type.id)
+        if existing is not None:
+            existing.active = True
+            return existing
+
+        publication = Publication(module_id=module.id, event_type_id=event_type.id, active=True)
+        self.publication_repo.add(publication)
+        await self.publication_repo.flush()
+        return publication
+
+    async def remove_publication(
+        self,
+        publication_id: uuid.UUID,
+        *,
+        actor_module: str | None = None,
+        actor_is_admin: bool = False,
+    ) -> None:
+        publication = await self.publication_repo.get_required(publication_id)
+        self._assert_can_act_on(publication.module.name, actor_module, actor_is_admin)
+        await self.publication_repo.delete(publication)
 
     # ------------------------------------------------------------------
     # Topologia
     # ------------------------------------------------------------------
     async def planned_topology(self) -> Topology:
-        """La topologia que corresponde al estado actual del registry."""
         queues = await self.subscription_repo.active_queue_names()
         return full_topology(queues)
 
     async def apply_topology(self, *, raise_on_error: bool = True) -> Topology:
         """Declara la topologia en el broker. Es idempotente.
 
-        Si el broker no responde, la operacion de negocio (por ejemplo crear una
-        suscripcion) **no se revierte**: queda declarada en el registry y se
-        aplica en el proximo arranque o al reintentar desde el panel. Es la
-        tolerancia a indisponibilidad aplicada al propio Core.
+        Si el broker no responde, la operacion de negocio (crear una suscripcion)
+        **no se revierte**: queda en el registry y se aplica en el proximo
+        arranque o al reintentar desde el panel.
         """
         topology = await self.planned_topology()
         try:
@@ -300,112 +343,16 @@ class RegistryService:
                     f"No se pudo aplicar la topologia en el broker: {exc}"
                 ) from exc
             return topology
-
-        logger.info(
-            "topology_applied",
-            queues=len(topology.queues),
-            bindings=len(topology.bindings),
-        )
         return topology
 
-    async def ensure_core_module(self) -> RegisteredModule:
-        """Da de alta el Core como un modulo mas del registry.
-
-        El Core consume eventos de negocio (para provisionar identidades y para
-        notificar). En vez de tener un atajo interno, se registra como modulo y
-        usa el mismo camino de suscripciones que los otros 8: el ruteo tiene una
-        sola implementacion y el panel muestra sus suscripciones como cualquiera.
-        """
-        module = await self.module_repo.get_by_name(CORE_MODULE_NAME)
-        if module is not None:
-            return module
-
-        return await self.register_module(
-            name=CORE_MODULE_NAME,
-            display_name="Core - Identidad, Integracion, Notificaciones y Monitoreo",
-            description=(
-                "Modulo 9. Hub de eventos, proveedor de identidad, catalogos "
-                "globales, DLQ, notificaciones y monitoreo."
-            ),
-            team="Equipo 9",
-            queue_name=CORE_INTERNAL_QUEUE,
-        )
-
-    async def sync_core_subscriptions(self) -> list[str]:
-        """Suscribe al Core a los tipos de evento que necesita consumir.
-
-        Son dos grupos, y ninguno implica conocer reglas de negocio ajenas:
-
-        * los eventos de identidad (`CiudadanoRegistrado`, ...), para provisionar
-          las cuentas de acceso;
-        * los tipos que tengan una regla de notificacion configurada.
-
-        El segundo grupo se lee de `notification_rules`: si un operador agrega una
-        regla para `ReclamoResuelto`, el Core se suscribe solo.
-        """
-        core = await self.ensure_core_module()
-        wanted = set(IDENTITY_EVENT_TYPES) | set(await self.rule_repo.distinct_event_types())
-
-        subscribed: list[str] = []
-        for event_type_name in sorted(wanted):
-            event_type = await self.event_type_repo.get_by_name(event_type_name)
-            if event_type is None:
-                # El tipo todavia no esta en el catalogo: se intentara de nuevo en
-                # el proximo arranque o cuando el equipo dueno lo registre.
-                continue
-            existing = await self.subscription_repo.find_pair(core.id, event_type.id)
-            if existing is None:
-                self.subscription_repo.add(
-                    Subscription(
-                        module_id=core.id,
-                        event_type_id=event_type.id,
-                        queue_name=CORE_INTERNAL_QUEUE,
-                    )
-                )
-                subscribed.append(event_type_name)
-            elif not existing.active:
-                existing.active = True
-                subscribed.append(event_type_name)
-
-        if subscribed:
-            await self.subscription_repo.flush()
-            logger.info("core_subscriptions_synced", added=subscribed)
-        return subscribed
-
-
-IDENTITY_EVENT_TYPES = (
-    "CiudadanoRegistrado",
-    "CiudadanoActualizado",
-    "OrganizacionRegistrada",
-)
-"""Eventos del modulo Ciudadanos con los que el Core mantiene las cuentas de acceso."""
-
-
-def build_registry_service(session, broker: Broker) -> RegistryService:
-    """Arma el servicio a partir de una sesion.
-
-    Lo usan el arranque de la aplicacion y los workers, que no pasan por el grafo
-    de dependencias de FastAPI pero necesitan el mismo servicio.
-    """
-    from app.repositories.contract_repository import (
-        EventTypeRepository,
-        ModuleRepository,
-        ProducerRepository,
-        SubscriptionRepository,
-    )
-    from app.repositories.monitoring_repository import AuditLogRepository
-    from app.repositories.notification_repository import NotificationRuleRepository
-
-    return RegistryService(
-        module_repo=ModuleRepository(session),
-        producer_repo=ProducerRepository(session),
-        subscription_repo=SubscriptionRepository(session),
-        event_type_repo=EventTypeRepository(session),
-        rule_repo=NotificationRuleRepository(session),
-        broker=broker,
-        audit=AuditService(AuditLogRepository(session)),
-    )
-
-
-def _normalize_name(name: str) -> str:
-    return name.strip().lower()
+    @staticmethod
+    def _assert_can_act_on(
+        module_name: str, actor_module: str | None, actor_is_admin: bool
+    ) -> None:
+        if actor_is_admin or actor_module is None:
+            return
+        if module_name.strip().lower() != actor_module.strip().lower():
+            raise ForbiddenError(
+                f"Estas autenticado como '{actor_module}' y solo podes administrar "
+                f"tus propias suscripciones, no las de '{module_name}'."
+            )

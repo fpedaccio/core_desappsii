@@ -1,4 +1,9 @@
-"""Acceso a datos de la trazabilidad del hub: bitacora, entregas, DLQ y auditoria."""
+"""Acceso a datos de la bitacora, entregas, DLQ y auditoria de reintentos.
+
+Casi todas las consultas aceptan `module_scope`: cuando un modulo entra al
+dashboard solo ve lo suyo (lo que publico + lo que le entregaron). El equipo 9
+entra como admin y ve todo.
+"""
 
 from __future__ import annotations
 
@@ -15,17 +20,38 @@ from app.models.events import (
     DeliveryStatus,
     EventLog,
     EventStatus,
-    ProcessedEvent,
     RetryAudit,
 )
 from app.repositories.base import BaseRepository, Page
 
 
+def _enum_value(value: object) -> str:
+    """Normaliza el valor de un enum, que segun el dialecto viene str o Enum."""
+    return str(getattr(value, "value", value))
+
+
 class EventLogRepository(BaseRepository[EventLog]):
     model = EventLog
 
+    def _scoped(self, stmt: Select, module_scope: str | None) -> Select:
+        """Limita a los eventos que le corresponden a un modulo.
+
+        Son los que publico mas los que le entregaron. Sin esto un equipo veria
+        el trafico de los otros ocho.
+        """
+        if not module_scope:
+            return stmt
+        return stmt.where(
+            or_(
+                EventLog.source_module == module_scope,
+                EventLog.id.in_(
+                    select(Delivery.event_log_id).where(Delivery.target_module == module_scope)
+                ),
+            )
+        )
+
     async def get_by_event_id(self, event_id: uuid.UUID) -> EventLog | None:
-        """Consulta que sostiene la idempotencia: ¿ya vimos este eventId?"""
+        """La consulta que sostiene la idempotencia: ¿ya vimos este eventId?"""
         stmt = (
             select(EventLog)
             .options(selectinload(EventLog.deliveries))
@@ -35,35 +61,46 @@ class EventLogRepository(BaseRepository[EventLog]):
 
     async def get_with_deliveries(self, log_id: uuid.UUID) -> EventLog | None:
         stmt = (
-            select(EventLog)
-            .options(selectinload(EventLog.deliveries))
-            .where(EventLog.id == log_id)
+            select(EventLog).options(selectinload(EventLog.deliveries)).where(EventLog.id == log_id)
         )
         return (await self.session.execute(stmt)).scalars().first()
 
     async def search(
         self,
         *,
+        module_scope: str | None = None,
         query: str | None = None,
         event_type: str | None = None,
         source_module: str | None = None,
+        target_module: str | None = None,
         status: EventStatus | None = None,
         correlation_id: uuid.UUID | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
         page: int = 1,
-        size: int = 20,
+        size: int = 25,
     ) -> Page[EventLog]:
         stmt: Select = select(EventLog).options(selectinload(EventLog.deliveries))
+        stmt = self._scoped(stmt, module_scope)
+
         if query:
             pattern = f"%{query.strip()}%"
             stmt = stmt.where(
-                or_(EventLog.event_type.ilike(pattern), EventLog.source_module.ilike(pattern))
+                or_(
+                    EventLog.event_type.ilike(pattern),
+                    EventLog.source_module.ilike(pattern),
+                )
             )
         if event_type:
             stmt = stmt.where(EventLog.event_type == event_type)
         if source_module:
             stmt = stmt.where(EventLog.source_module == source_module)
+        if target_module:
+            stmt = stmt.where(
+                EventLog.id.in_(
+                    select(Delivery.event_log_id).where(Delivery.target_module == target_module)
+                )
+            )
         if status:
             stmt = stmt.where(EventLog.status == status)
         if correlation_id:
@@ -72,9 +109,8 @@ class EventLogRepository(BaseRepository[EventLog]):
             stmt = stmt.where(EventLog.received_at >= since)
         if until:
             stmt = stmt.where(EventLog.received_at <= until)
-        return await self.paginate(
-            stmt.order_by(EventLog.received_at.desc()), page=page, size=size
-        )
+
+        return await self.paginate(stmt.order_by(EventLog.received_at.desc()), page=page, size=size)
 
     async def by_correlation(self, correlation_id: uuid.UUID) -> list[EventLog]:
         """La journey completa: todos los eventos que comparten correlationId."""
@@ -86,26 +122,48 @@ class EventLogRepository(BaseRepository[EventLog]):
         )
         return list((await self.session.execute(stmt)).scalars().unique().all())
 
-    async def count_by_status(self, *, since: datetime | None = None) -> dict[str, int]:
+    # -- estadisticas ------------------------------------------------------
+    async def count_by_status(
+        self, *, module_scope: str | None = None, since: datetime | None = None
+    ) -> dict[str, int]:
         stmt = select(EventLog.status, func.count()).group_by(EventLog.status)
+        stmt = self._scoped(stmt, module_scope)
         if since:
             stmt = stmt.where(EventLog.received_at >= since)
-        rows = (await self.session.execute(stmt)).all()
-        return {str(_enum_value(status)): int(count) for status, count in rows}
+        return {
+            _enum_value(status): int(total)
+            for status, total in (await self.session.execute(stmt)).all()
+        }
 
-    async def count_by_type(self, *, since: datetime | None = None, limit: int = 10) -> list[dict]:
+    async def count_published(self, module: str, *, since: datetime | None = None) -> int:
+        stmt = select(func.count()).select_from(EventLog).where(EventLog.source_module == module)
+        if since:
+            stmt = stmt.where(EventLog.received_at >= since)
+        return int((await self.session.execute(stmt)).scalar_one())
+
+    async def count_since(self, since: datetime, *, module_scope: str | None = None) -> int:
+        stmt = select(func.count()).select_from(EventLog).where(EventLog.received_at >= since)
+        stmt = self._scoped(stmt, module_scope)
+        return int((await self.session.execute(stmt)).scalar_one())
+
+    async def top_types(
+        self, *, module_scope: str | None = None, since: datetime | None = None, limit: int = 10
+    ) -> list[dict]:
         stmt = (
             select(EventLog.event_type, func.count().label("total"))
             .group_by(EventLog.event_type)
             .order_by(func.count().desc())
             .limit(limit)
         )
+        stmt = self._scoped(stmt, module_scope)
         if since:
             stmt = stmt.where(EventLog.received_at >= since)
-        rows = (await self.session.execute(stmt)).all()
-        return [{"eventType": event_type, "total": int(total)} for event_type, total in rows]
+        return [
+            {"eventType": name, "total": int(total)}
+            for name, total in (await self.session.execute(stmt)).all()
+        ]
 
-    async def count_by_module(self, *, since: datetime | None = None) -> list[dict]:
+    async def by_source_module(self, *, since: datetime | None = None) -> list[dict]:
         stmt = (
             select(EventLog.source_module, func.count().label("total"))
             .group_by(EventLog.source_module)
@@ -113,18 +171,43 @@ class EventLogRepository(BaseRepository[EventLog]):
         )
         if since:
             stmt = stmt.where(EventLog.received_at >= since)
-        rows = (await self.session.execute(stmt)).all()
-        return [{"module": module, "total": int(total)} for module, total in rows]
+        return [
+            {"module": name, "total": int(total)}
+            for name, total in (await self.session.execute(stmt)).all()
+        ]
 
-    async def count_since(self, since: datetime) -> int:
-        stmt = select(func.count()).select_from(EventLog).where(EventLog.received_at >= since)
-        return int((await self.session.execute(stmt)).scalar_one())
+    async def hourly_volume(
+        self, *, module_scope: str | None = None, since: datetime | None = None
+    ) -> list[dict]:
+        """Volumen por hora, para el grafico del dashboard.
 
-    async def processing_time_stats(self, *, since: datetime | None = None) -> dict[str, float]:
-        stmt = select(
-            func.avg(EventLog.processing_ms),
-            func.max(EventLog.processing_ms),
-        ).where(EventLog.processing_ms.is_not(None))
+        Se agrupa en Python: la funcion para truncar a la hora difiere entre
+        SQLite y PostgreSQL, y el volumen de una ventana de 24h es chico.
+        """
+        stmt = select(EventLog.received_at, EventLog.status)
+        stmt = self._scoped(stmt, module_scope)
+        if since:
+            stmt = stmt.where(EventLog.received_at >= since)
+
+        buckets: dict[str, dict[str, int]] = {}
+        for received_at, status in (await self.session.execute(stmt)).all():
+            key = received_at.replace(minute=0, second=0, microsecond=0).isoformat()
+            bucket = buckets.setdefault(key, {"total": 0, "rejected": 0})
+            bucket["total"] += 1
+            if _enum_value(status) == EventStatus.REJECTED.value:
+                bucket["rejected"] += 1
+        return [
+            {"hour": hour, "total": data["total"], "rejected": data["rejected"]}
+            for hour, data in sorted(buckets.items())
+        ]
+
+    async def processing_stats(
+        self, *, module_scope: str | None = None, since: datetime | None = None
+    ) -> dict[str, float]:
+        stmt = select(func.avg(EventLog.processing_ms), func.max(EventLog.processing_ms)).where(
+            EventLog.processing_ms.is_not(None)
+        )
+        stmt = self._scoped(stmt, module_scope)
         if since:
             stmt = stmt.where(EventLog.received_at >= since)
         avg_ms, max_ms = (await self.session.execute(stmt)).one()
@@ -148,33 +231,38 @@ class DeliveryRepository(BaseRepository[Delivery]):
         *,
         target_module: str | None = None,
         status: DeliveryStatus | None = None,
+        event_type: str | None = None,
         page: int = 1,
-        size: int = 20,
+        size: int = 25,
     ) -> Page[Delivery]:
         stmt = select(Delivery)
         if target_module:
             stmt = stmt.where(Delivery.target_module == target_module)
         if status:
             stmt = stmt.where(Delivery.status == status)
+        if event_type:
+            stmt = stmt.where(Delivery.event_type == event_type)
         return await self.paginate(stmt.order_by(Delivery.created_at.desc()), page=page, size=size)
 
-    async def count_by_status(self) -> dict[str, int]:
+    async def count_by_status(self, *, target_module: str | None = None) -> dict[str, int]:
         stmt = select(Delivery.status, func.count()).group_by(Delivery.status)
-        rows = (await self.session.execute(stmt)).all()
-        return {str(_enum_value(status)): int(count) for status, count in rows}
+        if target_module:
+            stmt = stmt.where(Delivery.target_module == target_module)
+        return {
+            _enum_value(status): int(total)
+            for status, total in (await self.session.execute(stmt)).all()
+        }
 
     async def count_by_module_and_status(self) -> list[dict]:
         stmt = select(Delivery.target_module, Delivery.status, func.count()).group_by(
             Delivery.target_module, Delivery.status
         )
-        rows = (await self.session.execute(stmt)).all()
         return [
-            {"module": module, "status": str(_enum_value(status)), "total": int(total)}
-            for module, status, total in rows
+            {"module": module, "status": _enum_value(status), "total": int(total)}
+            for module, status, total in (await self.session.execute(stmt)).all()
         ]
 
     async def due_for_retry(self, *, now: datetime, limit: int = 100) -> list[Delivery]:
-        """Entregas cuyo backoff ya vencio y hay que volver a intentar."""
         stmt = (
             select(Delivery)
             .where(
@@ -191,6 +279,16 @@ class DeliveryRepository(BaseRepository[Delivery]):
 class DeadLetterRepository(BaseRepository[DeadLetter]):
     model = DeadLetter
 
+    def _scoped(self, stmt: Select, module_scope: str | None) -> Select:
+        if not module_scope:
+            return stmt
+        return stmt.where(
+            or_(
+                DeadLetter.source_module == module_scope,
+                DeadLetter.target_module == module_scope,
+            )
+        )
+
     async def get_with_retries(self, dead_letter_id: uuid.UUID) -> DeadLetter | None:
         stmt = (
             select(DeadLetter)
@@ -202,15 +300,17 @@ class DeadLetterRepository(BaseRepository[DeadLetter]):
     async def search(
         self,
         *,
+        module_scope: str | None = None,
         query: str | None = None,
         status: DeadLetterStatus | None = None,
         event_type: str | None = None,
         target_module: str | None = None,
         reason_code: str | None = None,
         page: int = 1,
-        size: int = 20,
+        size: int = 25,
     ) -> Page[DeadLetter]:
         stmt = select(DeadLetter).options(selectinload(DeadLetter.retries))
+        stmt = self._scoped(stmt, module_scope)
         if query:
             pattern = f"%{query.strip()}%"
             stmt = stmt.where(
@@ -232,37 +332,34 @@ class DeadLetterRepository(BaseRepository[DeadLetter]):
             stmt.order_by(DeadLetter.created_at.desc()), page=page, size=size
         )
 
-    async def list_by_ids(self, ids: list[uuid.UUID]) -> list[DeadLetter]:
-        if not ids:
-            return []
-        stmt = (
-            select(DeadLetter)
-            .options(selectinload(DeadLetter.retries))
-            .where(DeadLetter.id.in_(ids))
-        )
-        return list((await self.session.execute(stmt)).scalars().unique().all())
-
-    async def count_open(self) -> int:
+    async def count_open(self, *, module_scope: str | None = None) -> int:
         stmt = (
             select(func.count())
             .select_from(DeadLetter)
             .where(DeadLetter.status == DeadLetterStatus.OPEN)
         )
+        stmt = self._scoped(stmt, module_scope)
         return int((await self.session.execute(stmt)).scalar_one())
 
-    async def count_by_reason(self) -> list[dict]:
+    async def count_by_reason(self, *, module_scope: str | None = None) -> list[dict]:
         stmt = (
             select(DeadLetter.reason_code, func.count().label("total"))
             .group_by(DeadLetter.reason_code)
             .order_by(func.count().desc())
         )
-        rows = (await self.session.execute(stmt)).all()
-        return [{"reasonCode": reason, "total": int(total)} for reason, total in rows]
+        stmt = self._scoped(stmt, module_scope)
+        return [
+            {"reasonCode": reason, "total": int(total)}
+            for reason, total in (await self.session.execute(stmt)).all()
+        ]
 
-    async def count_by_status(self) -> dict[str, int]:
+    async def count_by_status(self, *, module_scope: str | None = None) -> dict[str, int]:
         stmt = select(DeadLetter.status, func.count()).group_by(DeadLetter.status)
-        rows = (await self.session.execute(stmt)).all()
-        return {str(_enum_value(status)): int(count) for status, count in rows}
+        stmt = self._scoped(stmt, module_scope)
+        return {
+            _enum_value(status): int(total)
+            for status, total in (await self.session.execute(stmt)).all()
+        }
 
 
 class RetryAuditRepository(BaseRepository[RetryAudit]):
@@ -274,7 +371,7 @@ class RetryAuditRepository(BaseRepository[RetryAudit]):
         dead_letter_id: uuid.UUID | None = None,
         event_id: uuid.UUID | None = None,
         page: int = 1,
-        size: int = 20,
+        size: int = 25,
     ) -> Page[RetryAudit]:
         stmt = select(RetryAudit)
         if dead_letter_id:
@@ -284,37 +381,3 @@ class RetryAuditRepository(BaseRepository[RetryAudit]):
         return await self.paginate(
             stmt.order_by(RetryAudit.created_at.desc()), page=page, size=size
         )
-
-
-class ProcessedEventRepository(BaseRepository[ProcessedEvent]):
-    model = ProcessedEvent
-
-    async def was_processed(self, consumer: str, event_id: uuid.UUID) -> bool:
-        return await self.exists(consumer=consumer, event_id=event_id)
-
-    async def mark(
-        self,
-        *,
-        consumer: str,
-        event_id: uuid.UUID,
-        event_type: str | None,
-        processed_at: datetime,
-        result: str | None = None,
-    ) -> ProcessedEvent:
-        record = ProcessedEvent(
-            consumer=consumer,
-            event_id=event_id,
-            event_type=event_type,
-            processed_at=processed_at,
-            result=result,
-        )
-        return self.add(record)
-
-    async def list_for_event(self, event_id: uuid.UUID) -> list[ProcessedEvent]:
-        stmt = select(ProcessedEvent).where(ProcessedEvent.event_id == event_id)
-        return list((await self.session.execute(stmt)).scalars().all())
-
-
-def _enum_value(value: object) -> object:
-    """Normaliza el valor de un enum, que segun el dialecto viene como str o Enum."""
-    return getattr(value, "value", value)

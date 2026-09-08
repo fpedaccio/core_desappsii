@@ -8,7 +8,7 @@ de tener un PostgreSQL levantado.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, MetaData, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -31,7 +31,7 @@ TimestampTZ = DateTime(timezone=True)
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 NAMING_CONVENTION = {

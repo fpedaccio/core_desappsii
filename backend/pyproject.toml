@@ -68,4 +68,14 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
-ignore = ["B008"]  # FastAPI usa llamadas en defaults (Depends/Query) por diseno
+ignore = [
+    # FastAPI usa llamadas en los defaults (Depends/Query) por diseno.
+    "B008",
+    # `str, Enum` en vez de `StrEnum`: los enums se persisten como texto y se
+    # serializan a JSON, y heredar de `str` hace explicito que el valor ES la
+    # cadena que va a la base. Con StrEnum el comportamiento cambia sutil.
+    "UP042",
+    # `Generic[T]` en vez de los type params de PEP 695: funciona igual y
+    # `PageResponse` tiene que seguir siendo un modelo pydantic generico.
+    "UP046",
+]

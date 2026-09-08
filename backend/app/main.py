@@ -1,133 +1,149 @@
-"""Punto de entrada del backend del modulo Core.
+"""Modulo Core - pasamanos de eventos de la plataforma municipal.
 
-Arranque tolerante a fallas: si el broker no esta disponible, la aplicacion
-levanta igual en modo degradado. La API responde, `/health/ready` informa
-`degraded` y los eventos esperan en `core.inbox` hasta que el broker vuelva. Es
-la regla 7 del enunciado aplicada al propio Core.
+El Core recibe todos los eventos asincronicos de los 9 modulos, los valida
+estructuralmente, guarda evidencia y los entrega a quien este suscripto.
+
+**Lo que el Core NO hace:** no administra usuarios ni ciudadanos, no valida
+reglas de negocio de las areas y no interpreta el significado de los eventos.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
-from app.api.v1 import (
-    auth,
-    catalogs,
-    contracts,
-    dlq,
-    events,
-    monitoring,
-    notifications,
-    registry,
-    users,
-)
+from app.api.v1 import auth, dashboard, dlq, events, registry
+from app.api.v1.schemas.dto import LivenessResponse, ReadinessResponse
 from app.core.config import settings
-from app.core.context import TRACE_HEADER, set_actor, set_trace_id
-from app.core.database import SessionFactory
+from app.core.context import TRACE_HEADER, set_trace_id
+from app.core.database import SessionFactory, engine
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.messaging.provider import connect_broker, get_broker
+from app.messaging.topology import base_topology
+from app.repositories.registry_repository import SubscriptionRepository
 
 logger = structlog.get_logger(__name__)
 
+VERSION = "2.0.0"
+
 DESCRIPTION = """
-Modulo **Core** de la plataforma municipal distribuida (TPO Desarrollo de
-Aplicaciones II - UADE). Provee los servicios tecnicos comunes a los 9 modulos:
+Pasamanos de eventos de la plataforma municipal distribuida.
 
-* **Identidad y acceso.** Proveedor de identidad de la plataforma. Emite JWT
-  RS256 y publica su clave en `/.well-known/jwks.json`, para que los otros
-  modulos validen tokens *sin llamar al Core*.
-* **Catalogos globales.** Dependencias municipales, barrios, zonas y catalogos
-  genericos reutilizables.
-* **HUB de eventos.** Recibe todos los eventos de negocio, valida el sobre y el
-  contrato, guarda evidencia y los rutea a las suscripciones activas.
-* **Catalogo de contratos.** Tipos de evento versionados con JSON Schema, con
-  clasificacion automatica de compatibilidad (BACKWARD / FORWARD / FULL / BREAKING).
-* **Trazabilidad y DLQ.** Bitacora de eventos, entregas, reintentos con backoff y
-  Dead Letter Queue con reintento manual auditado.
-* **Notificaciones.** Plantillas y reglas configurables por evento.
-* **Monitoreo.** Salud de los modulos, tablero tecnico y de comunicaciones.
+## Que hace
 
-> El Core **no implementa reglas de negocio de las demas areas**. Valida el sobre
-> y el contrato; nunca interpreta el contenido de `data`.
+Recibe los eventos de los 9 modulos, los valida estructuralmente, guarda
+evidencia y los entrega a quien este suscripto. Cada modulo entra con su
+credencial y ve **solo su trafico**: lo que publico, lo que recibio y en que
+estado quedo cada entrega.
 
-### Como se conecta un modulo
+## Que no hace
 
-1. Pedir una cuenta de servicio (`POST /api/v1/api-clients`, lo hace un admin).
-2. Autenticarse con `POST /api/v1/auth/token` (client_credentials).
-3. Registrar sus tipos de evento y contratos (`POST /api/v1/event-types`).
-4. Declararse productor y/o suscribirse (`POST /api/v1/registry/...`).
-5. Publicar en el exchange `muni.inbox`, o por HTTP con `POST /api/v1/events`.
+No administra usuarios ni ciudadanos, no valida reglas de negocio de las areas
+y no interpreta el contenido de los eventos.
 
-El contrato del sobre esta en `GET /api/v1/events-meta/envelope-schema`.
+## Como empezar
+
+1. `POST /api/v1/auth/login` con el nombre de tu modulo y tu secret.
+2. `POST /api/v1/subscriptions` para recibir los tipos que te interesan.
+3. `POST /api/v1/events` para publicar (o publica en el exchange `muni.inbox`).
+4. `GET /api/v1/dashboard` para ver tus estadisticas.
+
+## Dos cosas a tener en cuenta
+
+**`occurredAt` necesita offset de zona horaria.** Un timestamp sin offset se
+rechaza: con 9 modulos desplegados por separado no habria forma de ordenar los
+hechos.
+
+**`eventId` es la clave de idempotencia.** Un UUID nuevo por evento. Si lo
+reenvias, el Core responde `200` con `duplicate: true` y no genera efectos
+nuevos.
 """
 
-TAGS_METADATA = [
-    {"name": "Autenticacion", "description": "Login, tokens de servicio y JWKS."},
-    {"name": "Usuarios y accesos", "description": "Usuarios, roles, permisos y clientes."},
-    {"name": "Catalogos globales", "description": "Dependencias, barrios, zonas y catalogos."},
-    {"name": "Catalogo de eventos", "description": "Tipos de evento, contratos y compatibilidad."},
-    {"name": "Registry de integracion", "description": "Modulos, productores, suscripciones."},
-    {"name": "Hub de eventos", "description": "Ingesta de eventos y trazabilidad."},
-    {"name": "Dead Letter Queue", "description": "Entregas fallidas, reintentos y descartes."},
-    {"name": "Notificaciones", "description": "Plantillas, reglas, preferencias e historial."},
-    {"name": "Monitoreo", "description": "Health checks, tableros y auditoria."},
-]
+
+class TraceMiddleware(BaseHTTPMiddleware):
+    """Propaga un `traceId` por request, en los logs y en la respuesta.
+
+    Si el cliente manda `X-Trace-Id`, se respeta: asi se puede seguir una
+    operacion que cruza varios modulos.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        trace_id = set_trace_id(request.headers.get(TRACE_HEADER))
+        response = await call_next(request)
+        response.headers[TRACE_HEADER] = trace_id
+        return response
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI):
     configure_logging()
-    logger.info("core_starting", environment=settings.environment)
+    logger.info("core_starting", version=VERSION, environment=settings.environment)
 
+    # El broker puede no estar disponible: el Core arranca igual y sirve la API.
+    # Los eventos esperan en core.inbox hasta que vuelva.
     connected = await connect_broker()
     if connected:
-        await _bootstrap_messaging()
+        broker = get_broker()
+        try:
+            # Primero la topologia base (exchanges, retry tiers, DLQ) y despues
+            # las colas de los modulos suscriptos.
+            await broker.declare(base_topology())
+            async with SessionFactory() as session:
+                queues = await SubscriptionRepository(session).active_queue_names()
+            from app.messaging.topology import full_topology
+
+            await broker.declare(full_topology(queues))
+            logger.info("topology_ready", consumer_queues=len(queues))
+        except Exception as exc:
+            logger.warning("topology_declare_failed_on_startup", error=str(exc))
 
     yield
 
     await get_broker().close()
+    await engine.dispose()
     logger.info("core_stopped")
-
-
-async def _bootstrap_messaging() -> None:
-    """Declara la topologia y sincroniza las suscripciones propias del Core.
-
-    Best-effort: un fallo aca deja la aplicacion andando y se puede reintentar
-    desde `POST /api/v1/registry/topology/apply`.
-    """
-    from app.services.registry_service import build_registry_service
-
-    try:
-        async with SessionFactory() as session:
-            service = build_registry_service(session, get_broker())
-            await service.ensure_core_module()
-            await service.sync_core_subscriptions()
-            await service.apply_topology(raise_on_error=False)
-            await session.commit()
-    except Exception as exc:
-        logger.warning("messaging_bootstrap_failed", error=str(exc))
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title=settings.app_name,
+        title="Municipalidad UADE - Core",
         description=DESCRIPTION,
-        version="1.0.0",
-        openapi_tags=TAGS_METADATA,
+        version=VERSION,
         lifespan=lifespan,
         docs_url="/docs",
         redoc_url="/redoc",
-        openapi_url="/openapi.json",
-        contact={"name": "Equipo 9 - Core", "email": "core@muni.uade.edu.ar"},
+        openapi_tags=[
+            {"name": "Autenticacion", "description": "Login de modulos."},
+            {
+                "name": "Eventos",
+                "description": "Publicar eventos y consultar la bitacora.",
+            },
+            {
+                "name": "Registry",
+                "description": (
+                    "Modulos, tipos de evento, suscripciones y publicaciones. "
+                    "Es donde cada equipo se autoadministra."
+                ),
+            },
+            {
+                "name": "DLQ y entregas",
+                "description": "Lo que fallo y como recuperarlo.",
+            },
+            {
+                "name": "Dashboard",
+                "description": "Estadisticas por modulo y vista global del hub.",
+            },
+            {"name": "Salud", "description": "Probes de liveness y readiness."},
+        ],
     )
 
+    app.add_middleware(TraceMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -137,65 +153,81 @@ def create_app() -> FastAPI:
         expose_headers=[TRACE_HEADER],
     )
 
-    @app.middleware("http")
-    async def trace_middleware(request: Request, call_next):
-        """Propaga el traceId de punta a punta.
-
-        Si el cliente manda `X-Trace-Id` se respeta, asi una journey iniciada en
-        otro modulo se sigue con el mismo identificador. Si no, se genera uno.
-        """
-        trace_id = set_trace_id(request.headers.get(TRACE_HEADER))
-        set_actor(None)
-        try:
-            response = await call_next(request)
-        except Exception:
-            # El handler global ya loguea; aca solo se garantiza que el cliente
-            # reciba el traceId con el que buscar en los logs.
-            logger.exception("request_failed", path=request.url.path)
-            response = JSONResponse(
-                status_code=500,
-                content={
-                    "code": "INTERNAL_ERROR",
-                    "message": "Ocurrio un error inesperado.",
-                    "details": [],
-                    "traceId": trace_id,
-                },
-            )
-        response.headers[TRACE_HEADER] = trace_id
-        return response
-
     register_exception_handlers(app)
 
-    prefix = settings.api_prefix
-    app.include_router(auth.router, prefix=prefix)
-    app.include_router(auth.jwks_router)  # sin prefijo: es una ruta well-known
-    app.include_router(users.router, prefix=prefix)
-    app.include_router(users.roles_router, prefix=prefix)
-    app.include_router(users.permissions_router, prefix=prefix)
-    app.include_router(users.clients_router, prefix=prefix)
-    app.include_router(catalogs.router, prefix=prefix)
-    app.include_router(contracts.router, prefix=prefix)
-    app.include_router(registry.router, prefix=prefix)
-    app.include_router(events.router, prefix=prefix)
-    app.include_router(events.meta_router, prefix=prefix)
-    app.include_router(dlq.router, prefix=prefix)
-    app.include_router(dlq.deliveries_router, prefix=prefix)
-    app.include_router(notifications.router, prefix=prefix)
-    app.include_router(monitoring.router, prefix=prefix)
-    app.include_router(monitoring.audit_router, prefix=prefix)
-    app.include_router(monitoring.health_router)  # sin prefijo: lo usa el deploy
+    for router in (auth.router, events.router, registry.router, dlq.router, dashboard.router):
+        app.include_router(router, prefix=settings.api_prefix)
 
-    @app.get("/", include_in_schema=False)
-    async def root() -> dict[str, str]:
-        return {
-            "module": settings.module_name,
-            "name": settings.app_name,
-            "docs": "/docs",
-            "health": "/health/live",
-            "jwks": "/.well-known/jwks.json",
-        }
-
+    _register_health(app)
     return app
+
+
+def _register_health(app: FastAPI) -> None:
+    @app.get(
+        "/health/live",
+        response_model=LivenessResponse,
+        tags=["Salud"],
+        summary="Liveness",
+        description="El proceso esta vivo. No toca base ni broker.",
+    )
+    async def liveness() -> LivenessResponse:
+        return LivenessResponse(
+            module=settings.module_name,
+            version=VERSION,
+            environment=settings.environment,
+        )
+
+    @app.get(
+        "/health/ready",
+        response_model=ReadinessResponse,
+        tags=["Salud"],
+        summary="Readiness",
+        description=(
+            "Chequea base de datos y broker.\n\n"
+            "`degraded` significa base arriba y broker caido: la API sigue "
+            "respondiendo y los eventos esperan en `core.inbox` sin perderse. Es "
+            "distinto de `down`, que es sin base de datos."
+        ),
+    )
+    async def readiness() -> ReadinessResponse:
+        from sqlalchemy import text
+
+        database_ok = True
+        database_error: str | None = None
+        try:
+            async with SessionFactory() as session:
+                await session.execute(text("SELECT 1"))
+        except Exception as exc:
+            database_ok = False
+            database_error = f"{type(exc).__name__}: {exc}"
+
+        try:
+            broker_ok = await get_broker().healthy()
+        except Exception:
+            broker_ok = False
+
+        if not database_ok:
+            state = "down"
+        elif not broker_ok:
+            state = "degraded"
+        else:
+            state = "up"
+
+        return ReadinessResponse(
+            status=state,
+            checks={
+                "database": {
+                    "status": "up" if database_ok else "down",
+                    "error": database_error,
+                },
+                "broker": {
+                    "status": "up" if broker_ok else "down",
+                    "detail": None
+                    if broker_ok
+                    else "Los eventos quedan encolados en core.inbox hasta que vuelva.",
+                },
+            },
+        )
 
 
 app = create_app()

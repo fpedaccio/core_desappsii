@@ -11,7 +11,7 @@ Campos minimos exigidos por el enunciado:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -79,7 +79,7 @@ class EventEnvelope(BaseModel):
     @property
     def occurred_at_utc(self) -> datetime:
         """El instante normalizado a UTC, conservando el original en el sobre."""
-        return self.occurred_at.astimezone(timezone.utc)
+        return self.occurred_at.astimezone(UTC)
 
     def to_wire(self) -> dict[str, Any]:
         """Serializa a la forma canonica (camelCase) que viaja por la cola."""

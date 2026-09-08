@@ -1,100 +1,112 @@
-"""Endpoints del hub de eventos: ingesta HTTP y explorador de trazabilidad."""
+"""El pasamanos: publicar eventos y consultar la bitacora."""
 
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Query, Response, status
 
-from app.api.deps import (
-    EventLogRepoDep,
-    HubDep,
-    InternalConsumerDep,
-    PrincipalDep,
-    ProcessedRepoDep,
-    require_permissions,
-)
+from app.api.deps import CallerDep, EventLogRepoDep, HubDep, ModuleRepoDep
 from app.api.v1.schemas.common import PageResponse
-from app.api.v1.schemas.events import (
-    EventLogResponse,
+from app.api.v1.schemas.dto import (
+    EventDetailResponse,
     EventSummaryResponse,
     IngestResponse,
     JourneyResponse,
-    ProcessedEventResponse,
 )
-from app.core import permissions as perms
-from app.core.errors import NotFoundError
+from app.core.database import utcnow
+from app.core.errors import ForbiddenError, NotFoundError
 from app.models.events import EventStatus, IngestionChannel
-from app.services.envelope import EventEnvelope
-from app.services.registry_service import IDENTITY_EVENT_TYPES
+from app.services.envelope import ENVELOPE_EXAMPLE, EventEnvelope
 
-router = APIRouter(prefix="/events", tags=["Hub de eventos"])
+router = APIRouter(tags=["Eventos"])
 
 
 @router.post(
-    "",
+    "/events",
     response_model=IngestResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_permissions(perms.EVENTS_PUBLISH))],
-    summary="Publicar un evento en el hub",
+    summary="Publicar un evento",
     description=(
-        "Ingesta HTTP, equivalente a publicar en el exchange `muni.inbox`. Pasa por "
-        "el mismo pipeline: idempotencia, validacion de contrato, evidencia y ruteo.\n\n"
-        "**Codigos de estado**\n"
-        "- `202` el evento se acepto y ruteo a sus suscriptores.\n"
-        "- `200` el `eventId` ya se habia procesado: no se generan efectos nuevos.\n"
-        "- `422` el sobre o el contrato no validan. El evento **igual queda "
-        "registrado y en la DLQ**, y la respuesta trae el motivo.\n\n"
-        "La respuesta siempre tiene la misma forma, incluso al rechazar, para que el "
-        "modulo productor pueda seguir su evento en el panel."
+        "Ingesta por HTTP, equivalente a publicar en el exchange `muni.inbox`.\n\n"
+        "**Que hace el Core con el evento:**\n"
+        "1. Si el `eventId` ya se vio, responde `200` con `duplicate: true` y no "
+        "hace nada mas.\n"
+        "2. Valida el sobre. `occurredAt` **necesita offset de zona horaria**.\n"
+        "3. Si el tipo tiene JSON Schema declarado, valida el `data`. Si no, pasa "
+        "sin mirarlo.\n"
+        "4. Guarda el sobre como evidencia.\n"
+        "5. Lo entrega a las suscripciones activas de ese tipo.\n\n"
+        "Un tipo de evento que nadie declaro **no se rechaza**: se registra solo y "
+        "queda marcado en el dashboard. Un evento que no cumple el schema tampoco "
+        "se pierde: va a la DLQ con el detalle del campo."
     ),
+    responses={
+        202: {"description": "Aceptado y ruteado"},
+        200: {"description": "Duplicado: ese eventId ya se habia procesado"},
+        422: {"description": "El sobre o el `data` no validan. El evento queda en la DLQ."},
+    },
 )
-async def ingest_event(
+async def publish_event(
     envelope: EventEnvelope,
     hub: HubDep,
-    consumer: InternalConsumerDep,
-    principal: PrincipalDep,
+    caller: CallerDep,
+    module_repo: ModuleRepoDep,
     response: Response,
 ) -> IngestResponse:
+    # Un modulo solo publica en su propio nombre. Si no, cualquiera podria
+    # inyectar eventos haciendose pasar por otro equipo.
+    if not caller.is_admin and envelope.source_module != caller.module:
+        raise ForbiddenError(
+            f"Estas autenticado como '{caller.module}' y el evento declara "
+            f"sourceModule '{envelope.source_module}'. Solo podes publicar en tu "
+            "propio nombre."
+        )
+
     result = await hub.ingest(envelope, channel=IngestionChannel.HTTP)
+
+    module = await module_repo.get_by_name(envelope.source_module)
+    if module is not None:
+        module.last_publish_at = utcnow()
 
     if result.duplicate:
         response.status_code = status.HTTP_200_OK
-    elif not result.accepted:
+    elif result.status == EventStatus.REJECTED:
         response.status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-
-    # Si el Core esta suscripto al tipo, se procesa en linea: por HTTP no hay
-    # entrega AMQP a `q.core.internal` que dispare el consumidor interno.
-    if result.accepted and not result.duplicate and "core" in result.routed_to:
-        await consumer.handle_event(envelope)
-
     return IngestResponse.of(result)
 
 
 @router.get(
-    "",
+    "/events",
     response_model=PageResponse[EventSummaryResponse],
-    dependencies=[Depends(require_permissions(perms.EVENTS_READ))],
-    summary="Explorar la bitacora de eventos",
-    description="Filtros por tipo, modulo origen, estado, correlacion y rango de fechas.",
+    summary="Explorar la bitacora",
+    description=(
+        "Un modulo ve **solo su trafico**: lo que publico mas lo que le entregaron. "
+        "El administrador ve todo. El filtro se aplica en la consulta, no con query "
+        "params, asi que no se puede pedir el trafico de otro modulo."
+    ),
 )
-async def search_events(
-    repo: EventLogRepoDep,
+async def list_events(
+    caller: CallerDep,
+    event_log_repo: EventLogRepoDep,
     query: str | None = Query(default=None, description="Busca por tipo o modulo origen"),
     event_type: str | None = Query(default=None, alias="eventType"),
     source_module: str | None = Query(default=None, alias="sourceModule"),
+    target_module: str | None = Query(default=None, alias="targetModule"),
     status_filter: EventStatus | None = Query(default=None, alias="status"),
     correlation_id: uuid.UUID | None = Query(default=None, alias="correlationId"),
-    since: datetime | None = Query(default=None, description="Recibidos desde (ISO-8601)"),
-    until: datetime | None = Query(default=None, description="Recibidos hasta (ISO-8601)"),
+    since: datetime | None = Query(default=None),
+    until: datetime | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    size: int = Query(default=20, ge=1, le=200),
+    size: int = Query(default=25, ge=1, le=200),
 ) -> PageResponse[EventSummaryResponse]:
-    result = await repo.search(
+    result = await event_log_repo.search(
+        module_scope=caller.scope,
         query=query,
         event_type=event_type,
         source_module=source_module,
+        target_module=target_module,
         status=status_filter,
         correlation_id=correlation_id,
         since=since,
@@ -106,102 +118,73 @@ async def search_events(
 
 
 @router.get(
-    "/journey/{correlation_id}",
-    response_model=JourneyResponse,
-    dependencies=[Depends(require_permissions(perms.EVENTS_READ))],
-    summary="Journey completa de una correlacion",
+    "/events/{event_id}",
+    response_model=EventDetailResponse,
+    summary="Detalle de un evento",
     description=(
-        "Todos los eventos que comparten `correlationId`, en orden cronologico. Es "
-        "la vista que reconstruye el recorrido del ciudadano entre modulos."
+        "Por el `eventId` de negocio (el que mando el modulo). Trae el sobre "
+        "completo y el estado de cada entrega."
     ),
 )
-async def get_journey(
-    correlation_id: uuid.UUID, repo: EventLogRepoDep
-) -> JourneyResponse:
-    events = await repo.by_correlation(correlation_id)
-    if not events:
-        raise NotFoundError(f"No hay eventos con correlationId {correlation_id}.")
+async def get_event(
+    event_id: uuid.UUID, caller: CallerDep, event_log_repo: EventLogRepoDep
+) -> EventDetailResponse:
+    event = await event_log_repo.get_by_event_id(event_id)
+    if event is None:
+        raise NotFoundError(f"No hay ningun evento con eventId {event_id}.")
+
+    if caller.scope and not _visible_to(event, caller.scope):
+        raise NotFoundError(f"No hay ningun evento con eventId {event_id}.")
+    return EventDetailResponse.of_detail(event)
+
+
+@router.get(
+    "/events/journey/{correlation_id}",
+    response_model=JourneyResponse,
+    summary="La journey completa",
+    description=(
+        "Todos los eventos que comparten un `correlationId`, en orden cronologico. "
+        "Es la vista que reconstruye el recorrido de un tramite entre modulos."
+    ),
+)
+async def get_journey(correlation_id: uuid.UUID, caller: CallerDep, hub: HubDep) -> JourneyResponse:
+    events = await hub.journey(correlation_id)
+    if caller.scope:
+        events = [e for e in events if _visible_to(e, caller.scope)]
 
     modules = sorted(
-        {event.source_module for event in events}
-        | {delivery.target_module for event in events for delivery in event.deliveries}
+        {e.source_module for e in events} | {d.target_module for e in events for d in e.deliveries}
     )
     return JourneyResponse(
         correlation_id=correlation_id,
         event_count=len(events),
         modules_involved=modules,
-        events=[EventSummaryResponse.of(event) for event in events],
+        events=[EventSummaryResponse.of(e) for e in events],
     )
 
 
 @router.get(
-    "/by-event-id/{event_id}",
-    response_model=EventLogResponse,
-    dependencies=[Depends(require_permissions(perms.EVENTS_READ))],
-    summary="Buscar un evento por su eventId de negocio",
-    description=(
-        "Busca por el `eventId` del sobre, que es el identificador que conoce el "
-        "modulo productor."
-    ),
+    "/events-meta/envelope-schema",
+    summary="El contrato del sobre",
+    description="El formato que tienen que respetar todos los eventos de la plataforma.",
 )
-async def get_event_by_event_id(
-    event_id: uuid.UUID, repo: EventLogRepoDep
-) -> EventLogResponse:
-    event = await repo.get_by_event_id(event_id)
-    if event is None:
-        raise NotFoundError(f"No se registro ningun evento con eventId {event_id}.")
-    return EventLogResponse.of(event)
-
-
-@router.get(
-    "/{log_id}",
-    response_model=EventLogResponse,
-    dependencies=[Depends(require_permissions(perms.EVENTS_READ))],
-    summary="Ver un evento con sus entregas",
-)
-async def get_event(log_id: uuid.UUID, repo: EventLogRepoDep) -> EventLogResponse:
-    event = await repo.get_with_deliveries(log_id)
-    if event is None:
-        raise NotFoundError(f"No existe el evento {log_id}.")
-    return EventLogResponse.of(event)
-
-
-@router.get(
-    "/{event_id}/processed-by",
-    response_model=list[ProcessedEventResponse],
-    dependencies=[Depends(require_permissions(perms.EVENTS_READ))],
-    summary="Consumidores que ya procesaron un evento",
-    description=(
-        "Marcas de idempotencia por consumidor. Los otros modulos pueden consultarlo "
-        "para saber si ya aplicaron un evento antes de volver a procesarlo."
-    ),
-)
-async def processed_by(
-    event_id: uuid.UUID, repo: ProcessedRepoDep
-) -> list[ProcessedEventResponse]:
-    return [ProcessedEventResponse.of(item) for item in await repo.list_for_event(event_id)]
-
-
-meta_router = APIRouter(prefix="/events-meta", tags=["Hub de eventos"])
-
-
-@meta_router.get(
-    "/envelope-schema",
-    summary="Contrato del sobre comun de eventos",
-    description=(
-        "Devuelve el JSON Schema del sobre que comparten los 9 modulos, generado "
-        "desde el modelo que el hub realmente valida. Es la referencia para los "
-        "otros equipos."
-    ),
-)
-async def envelope_schema(principal: PrincipalDep) -> dict:
+async def envelope_schema() -> dict:
     return {
         "schema": EventEnvelope.model_json_schema(by_alias=True),
-        "notes": [
-            "occurredAt exige offset de zona horaria: un timestamp sin offset se rechaza.",
-            "eventId es la clave de idempotencia: reenviarlo no genera efectos nuevos.",
-            "correlationId es opcional pero recomendado; habilita la vista de journey.",
-            "El campo data se valida contra el JSON Schema de la version declarada.",
+        "example": ENVELOPE_EXAMPLE,
+        "rules": [
+            "eventId es un UUID nuevo por evento. Es la clave de idempotencia: "
+            "reenviarlo no genera efectos nuevos.",
+            "occurredAt necesita offset de zona horaria (ej. -03:00). Un timestamp "
+            "sin offset se rechaza.",
+            "sourceModule tiene que coincidir con el modulo autenticado.",
+            "correlationId es opcional pero se recomienda: propagalo cuando tu "
+            "evento sale de consumir otro, y con eso se reconstruye la journey.",
+            "data es libre. Solo se valida si el tipo de evento declaro un JSON Schema.",
         ],
-        "identityEventTypes": list(IDENTITY_EVENT_TYPES),
     }
+
+
+def _visible_to(event, module: str) -> bool:
+    """Un modulo ve los eventos que publico y los que le entregaron."""
+    return event.source_module == module or any(d.target_module == module for d in event.deliveries)

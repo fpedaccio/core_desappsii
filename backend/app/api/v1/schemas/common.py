@@ -56,13 +56,3 @@ class ErrorResponse(CamelModel):
 
 class MessageResponse(CamelModel):
     message: str
-
-
-class SecretResponse(CamelModel):
-    """Devuelve un secret en claro. Solo se muestra una vez."""
-
-    client_id: str
-    client_secret: str
-    warning: str = (
-        "Guardalo ahora: el Core solo conserva su hash y no lo puede volver a mostrar."
-    )

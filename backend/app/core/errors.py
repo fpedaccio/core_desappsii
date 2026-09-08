@@ -108,9 +108,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def _request_validation(_: Request, exc: RequestValidationError) -> JSONResponse:
         details = [
             {
-                "field": ".".join(str(part) for part in err["loc"][1:]) or ".".join(
-                    str(part) for part in err["loc"]
-                ),
+                "field": ".".join(str(part) for part in err["loc"][1:])
+                or ".".join(str(part) for part in err["loc"]),
                 "message": err["msg"],
                 "type": err["type"],
             }

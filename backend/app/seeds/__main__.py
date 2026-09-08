@@ -1,8 +1,10 @@
-"""Carga los datos iniciales del Core.
+"""Carga los datos iniciales: los 9 modulos y los eventos del board de Miro.
 
-    python -m app.seeds                 # crea tablas si faltan y siembra
-    python -m app.seeds --no-clients    # sin cuentas de servicio de los modulos
-    python -m app.seeds --drop          # recrea el esquema desde cero (destructivo)
+Es idempotente: se puede correr cuantas veces se quiera. Con `--drop` recrea las
+tablas desde cero.
+
+    python -m app.seeds
+    python -m app.seeds --drop
 """
 
 from __future__ import annotations
@@ -12,75 +14,156 @@ import sys
 
 import structlog
 
-from app.core.config import settings
 from app.core.database import Base, SessionFactory, engine
 from app.core.logging import configure_logging
-from app.seeds.bootstrap import seed_all
-
-# Importa todos los modelos para que `Base.metadata` este completo.
-import app.models  # noqa: F401  isort:skip
+from app.core.security import generate_opaque_token, hash_opaque_token
+from app.models.registry import EventType, ModuleAccount, Publication, Subscription
+from app.repositories.registry_repository import (
+    EventTypeRepository,
+    ModuleRepository,
+    PublicationRepository,
+    SubscriptionRepository,
+)
+from app.seeds.board_events import DESCRIPTIONS, MISMATCHES, MODULES
 
 logger = structlog.get_logger(__name__)
 
 
-async def main(*, drop: bool, create_clients: bool) -> int:
+async def run(*, drop: bool = False) -> None:
     configure_logging()
-
-    if drop:
-        if settings.is_production:
-            print("ERROR: --drop esta deshabilitado en produccion.", file=sys.stderr)
-            return 2
-        confirmation = input(
-            f"Se va a BORRAR el esquema completo de {_redact(settings.database_url)}.\n"
-            "Escribi 'si' para confirmar: "
-        )
-        if confirmation.strip().lower() != "si":
-            print("Cancelado.")
-            return 1
 
     async with engine.begin() as connection:
         if drop:
             await connection.run_sync(Base.metadata.drop_all)
             logger.warning("schema_dropped")
-        # `create_all` es idempotente: no toca las tablas que ya existen.
         await connection.run_sync(Base.metadata.create_all)
 
+    secrets: dict[str, str] = {}
+    counts = {"modules": 0, "event_types": 0, "subscriptions": 0, "publications": 0}
+
     async with SessionFactory() as session:
-        report = await seed_all(session, create_api_clients=create_clients)
+        module_repo = ModuleRepository(session)
+        event_type_repo = EventTypeRepository(session)
+        subscription_repo = SubscriptionRepository(session)
+        publication_repo = PublicationRepository(session)
 
-    print("\n=== Datos iniciales cargados ===")
-    print(report.summary())
+        # --- tipos de evento ------------------------------------------
+        all_types = sorted({e for _, _, _, pub, con in MODULES for e in pub + con})
+        type_by_name: dict[str, EventType] = {}
 
-    if report.api_clients:
-        print("\n=== Cuentas de servicio de los modulos ===")
-        print("Guarda estos secrets: el Core solo conserva su hash.\n")
-        for client_id, secret in sorted(report.api_clients.items()):
-            print(f"  {client_id:22} {secret}")
-        print(
-            "\nCada equipo se autentica con:\n"
-            "  POST /api/v1/auth/token  "
-            '{"clientId": "<modulo>", "clientSecret": "<secret>"}'
-        )
+        for name in all_types:
+            existing = await event_type_repo.get_by_name(name)
+            if existing is None:
+                existing = EventType(
+                    name=name,
+                    description=DESCRIPTIONS.get(name, ""),
+                    # El dueno se completa mas abajo, cuando se sabe quien publica.
+                    owner_module=None,
+                    discovered=False,
+                    json_schema=None,
+                    total_received=0,
+                )
+                event_type_repo.add(existing)
+                counts["event_types"] += 1
+            elif not existing.description:
+                existing.description = DESCRIPTIONS.get(name, "")
+            type_by_name[name] = existing
+        await session.flush()
 
-    print(f"\nAdministrador: {settings.seed_admin_email} / {settings.seed_admin_password}")
-    print("Swagger: http://localhost:8000/docs\n")
-    return 0
+        # --- modulos --------------------------------------------------
+        module_by_name: dict[str, ModuleAccount] = {}
+        for name, display, team, published, _consumed in MODULES:
+            module = await module_repo.get_by_name(name)
+            if module is None:
+                module = ModuleAccount(
+                    name=name,
+                    display_name=display,
+                    team=team,
+                    description="",
+                    is_admin=(name == "core"),
+                    active=True,
+                    queue_name=f"q.{name}",
+                )
+                module_repo.add(module)
+                counts["modules"] += 1
+
+            # El secret se regenera solo si el modulo no tenia: correr el seed de
+            # nuevo no invalida las credenciales que los equipos ya estan usando.
+            if not module.secret_hash:
+                secret = generate_opaque_token()
+                module.secret_hash = hash_opaque_token(secret)
+                secrets[name] = secret
+
+            module_by_name[name] = module
+
+            # El primero que declara publicar un tipo queda como su dueno.
+            for event_name in published:
+                event_type = type_by_name[event_name]
+                if event_type.owner_module is None:
+                    event_type.owner_module = name
+        await session.flush()
+
+        # --- publicaciones y suscripciones ----------------------------
+        for name, _display, _team, published, consumed in MODULES:
+            module = module_by_name[name]
+
+            for event_name in published:
+                event_type = type_by_name[event_name]
+                if await publication_repo.find_pair(module.id, event_type.id) is None:
+                    publication_repo.add(
+                        Publication(module_id=module.id, event_type_id=event_type.id, active=True)
+                    )
+                    counts["publications"] += 1
+
+            for event_name in consumed:
+                event_type = type_by_name[event_name]
+                if await subscription_repo.find_pair(module.id, event_type.id) is None:
+                    subscription_repo.add(
+                        Subscription(
+                            module_id=module.id,
+                            event_type_id=event_type.id,
+                            max_attempts=4,
+                            active=True,
+                        )
+                    )
+                    counts["subscriptions"] += 1
+
+        await session.commit()
+
+    _report(counts, secrets)
+    await engine.dispose()
 
 
-def _redact(url: str) -> str:
-    if "@" not in url:
-        return url
-    scheme, _, rest = url.partition("://")
-    _, _, host = rest.partition("@")
-    return f"{scheme}://***@{host}"
+def _report(counts: dict[str, int], secrets: dict[str, str]) -> None:
+    summary = ", ".join(f"{key}={value}" for key, value in counts.items())
+    logger.info("seed_completed", summary=summary)
+
+    print("\n=== Datos cargados ===")
+    print(summary or "nada nuevo: ya estaba todo cargado")
+
+    if secrets:
+        print("\n=== Credenciales de los modulos ===")
+        print("Guardalas: el Core solo conserva su hash.\n")
+        for name, secret in sorted(secrets.items()):
+            print(f"  {name:22} {secret}")
+        print("\nCada equipo entra con:")
+        print('  POST /api/v1/auth/login  {"module": "<nombre>", "secret": "<secret>"}')
+    else:
+        print("\nLas credenciales ya estaban generadas y no se tocaron.")
+        print("Para rotar una:  POST /api/v1/modules/{nombre}/rotate-secret")
+
+    print("\n=== Desalineaciones detectadas en el board ===")
+    print("Los nombres se transcribieron tal cual, con typos incluidos:")
+    print("corregirlos aca no arreglaria nada, porque el evento igual no")
+    print("encontraria destino. Aparecen en /api/v1/dashboard/integration-alerts.\n")
+    for left, right, detail in MISMATCHES:
+        print(f"  {left}")
+        print(f"    vs {right}")
+        print(f"    {detail}\n")
+
+    print("Swagger: http://localhost:8000/docs")
+    print("Admin (ve todos los modulos): core")
 
 
 if __name__ == "__main__":
-    raise SystemExit(
-        asyncio.run(
-            main(
-                drop="--drop" in sys.argv,
-                create_clients="--no-clients" not in sys.argv,
-            )
-        )
-    )
+    asyncio.run(run(drop="--drop" in sys.argv))

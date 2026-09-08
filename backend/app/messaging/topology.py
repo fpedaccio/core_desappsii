@@ -12,7 +12,7 @@ esta especificacion y la aplica sobre el broker.
                                                │
                                      ┌─────────┴─────────┐
                                      ▼                   ▼
-                                  q.obras            q.core.internal
+                                  q.obras             q.rentas
                                      │ el consumidor rechaza el mensaje
                                      ▼
                       muni.retry.5s ──► q.retry.5s ─(TTL)─► muni.events
@@ -32,11 +32,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.core.config import settings
-
-CORE_INTERNAL_QUEUE = "q.core.internal"
-"""Cola con la que el propio Core consume eventos de negocio (identidad,
-notificaciones). El Core se registra como un modulo mas y usa el mismo camino
-que todos, en lugar de tener un atajo interno."""
 
 
 @dataclass(frozen=True)
@@ -118,7 +113,9 @@ def base_topology() -> Topology:
     queues = [
         # Durable: si el Core esta caido, los publishers siguen publicando sin
         # error y los mensajes esperan aca. Nada se pierde.
-        QueueSpec(settings.queue_inbox, arguments={"x-dead-letter-exchange": settings.exchange_dlx}),
+        QueueSpec(
+            settings.queue_inbox, arguments={"x-dead-letter-exchange": settings.exchange_dlx}
+        ),
         QueueSpec(settings.queue_dlq),
     ]
     bindings = [
@@ -163,5 +160,4 @@ def consumer_topology(queue_names: list[str]) -> Topology:
 
 def full_topology(queue_names: list[str]) -> Topology:
     """Topologia completa: infraestructura + colas de consumidores."""
-    unique = sorted({*queue_names, CORE_INTERNAL_QUEUE})
-    return base_topology().merge(consumer_topology(unique))
+    return base_topology().merge(consumer_topology(sorted(set(queue_names))))
