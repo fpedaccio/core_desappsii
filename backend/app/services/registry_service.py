@@ -232,6 +232,10 @@ class RegistryService:
             max_attempts=max_attempts,
             active=True,
         )
+        # Igual que en `declare_publication`: se asignan para no depender de un
+        # lazy load al serializar la respuesta.
+        subscription.module = module
+        subscription.event_type = event_type
         self.subscription_repo.add(subscription)
         await self.subscription_repo.flush()
 
@@ -304,6 +308,11 @@ class RegistryService:
             return existing
 
         publication = Publication(module_id=module.id, event_type_id=event_type.id, active=True)
+        # Las relaciones se asignan explicitamente: sin esto, serializar la
+        # respuesta dispararia un lazy load sobre un objeto recien creado, ya
+        # fuera del contexto async de la sesion.
+        publication.module = module
+        publication.event_type = event_type
         self.publication_repo.add(publication)
         await self.publication_repo.flush()
         return publication

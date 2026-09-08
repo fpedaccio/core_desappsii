@@ -358,22 +358,43 @@ def _split_camel(name: str) -> list[str]:
 
 
 def _edit_distance_at_most(left: str, right: str, limit: int) -> bool:
-    """Levenshtein con corte temprano: solo importa si es <= limit."""
+    """Damerau-Levenshtein con corte temprano: solo importa si es <= limit.
+
+    Cuenta la transposicion de dos caracteres adyacentes como **una** edicion,
+    no dos. Importa para el caso de uso: los typos de los equipos son casi
+    siempre letras invertidas (`envirometnal` por `environmental`,
+    `Clousure` por `Closure`), y con Levenshtein puro cada intercambio sale 2,
+    asi que un typo de dos letras se escapaba del umbral.
+    """
     if abs(len(left) - len(right)) > limit:
         return False
 
-    previous = list(range(len(right) + 1))
-    for i, char_left in enumerate(left, start=1):
-        current = [i]
-        for j, char_right in enumerate(right, start=1):
-            current.append(
-                min(
-                    previous[j] + 1,
-                    current[j - 1] + 1,
-                    previous[j - 1] + (char_left != char_right),
-                )
+    rows = len(left) + 1
+    cols = len(right) + 1
+    distance = [[0] * cols for _ in range(rows)]
+    for i in range(rows):
+        distance[i][0] = i
+    for j in range(cols):
+        distance[0][j] = j
+
+    for i in range(1, rows):
+        for j in range(1, cols):
+            cost = 0 if left[i - 1] == right[j - 1] else 1
+            distance[i][j] = min(
+                distance[i - 1][j] + 1,       # borrar
+                distance[i][j - 1] + 1,       # insertar
+                distance[i - 1][j - 1] + cost,  # sustituir
             )
-        if min(current) > limit:
+            # Transposicion de dos caracteres adyacentes.
+            if (
+                i > 1
+                and j > 1
+                and left[i - 1] == right[j - 2]
+                and left[i - 2] == right[j - 1]
+            ):
+                distance[i][j] = min(distance[i][j], distance[i - 2][j - 2] + 1)
+
+        if min(distance[i]) > limit:
             return False
-        previous = current
-    return previous[-1] <= limit
+
+    return distance[-1][-1] <= limit

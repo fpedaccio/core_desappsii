@@ -161,8 +161,13 @@ class DeliveryService:
         self, delivery: Delivery, event_log: EventLog | None, body: dict, last_error: str
     ) -> None:
         """Publica el mensaje en el escalon de backoff que corresponda."""
+        # `attempts` es el numero del intento que acaba de fallar: define el
+        # escalon de espera. Se incrementa aca, al programar el siguiente; sin
+        # eso el contador quedaria clavado, el backoff no escalaria nunca y el
+        # mensaje giraria para siempre sin llegar a la DLQ.
         attempt = delivery.attempts
         delay = _delay_for(attempt)
+        delivery.attempts += 1
         delivery.status = DeliveryStatus.RETRYING
         delivery.next_retry_at = utcnow() + timedelta(seconds=delay)
 

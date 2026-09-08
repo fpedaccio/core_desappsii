@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .coverage
+coverage.xml
 htmlcov/
 
 # Base de datos local y secretos
@@ -23,3 +24,5 @@ dist/
 
 # Metadata de build de setuptools
 *.egg-info/
+dist/
+build/

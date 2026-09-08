@@ -46,10 +46,19 @@ filterwarnings = ["ignore::DeprecationWarning"]
 
 [tool.coverage.run]
 source = ["app"]
+# SQLAlchemy async ejecuta el codigo dentro de greenlets (greenlet_spawn), y
+# coverage por defecto solo traza threads: sin esto pierde el rastro de todo lo
+# que viene despues del primer await a la base y reporta como no cubierto codigo
+# que los tests si ejecutan.
+concurrency = ["greenlet", "thread"]
 omit = [
-    "app/workers/*",          # entrypoints de procesos, se testean los servicios que invocan
-    "app/messaging/rabbitmq.py",  # adaptador de I/O real; cubierto por FakeBroker + smoke manual
-    "migrations/*",
+    # Entrypoints de procesos: lo que hacen es cablear servicios que si se
+    # testean. Correrlos en la suite implicaria levantar el proceso.
+    "app/workers/*",
+    "app/seeds/*",
+    # Adaptador de I/O real contra RabbitMQ. El contrato `Broker` se cubre con
+    # FakeBroker; este se verifica levantando el broker de verdad.
+    "app/messaging/rabbitmq.py",
 ]
 
 [tool.coverage.report]
