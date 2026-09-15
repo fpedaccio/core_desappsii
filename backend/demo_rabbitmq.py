@@ -29,7 +29,7 @@ from app.core.config import settings
 from app.core.database import Base, SessionFactory, engine
 from app.messaging.broker import HEADER_ERROR, HEADER_TARGET, InboundMessage
 from app.messaging.provider import get_broker
-from app.messaging.topology import base_topology, full_topology
+from app.messaging.topology import base_topology, full_topology, retry_queue_for
 from app.models.events import IngestionChannel
 from app.repositories.event_repository import (
     DeadLetterRepository,
@@ -102,10 +102,19 @@ def hub(session):
     )
 
 
-async def contar(canal, cola: str) -> int:
-    """Mensajes esperando en una cola, leidos del broker real."""
-    declarada = await canal.declare_queue(cola, durable=True, passive=True)
-    return declarada.declaration_result.message_count
+async def contar(conexion, cola: str) -> int:
+    """Mensajes esperando en una cola, leidos del broker real.
+
+    Usa un canal propio: sobre el canal compartido, justo despues de una purga
+    o de una rafaga de publicaciones, la cuenta volvia desactualizada.
+    """
+    canal = await conexion.channel()
+    try:
+        declarada = await canal.declare_queue(cola, durable=True, passive=True)
+        return declarada.declaration_result.message_count
+    finally:
+        if not canal.is_closed:
+            await canal.close()
 
 
 async def purgar(conexion, colas: list[str]) -> int:
@@ -214,7 +223,7 @@ async def main(interactivo: bool) -> None:
     )
     await asyncio.sleep(0.8)
     ok(f"publicado · eventId {evento['eventId'][:8]}...")
-    dato(f"core.inbox tiene {await contar(canal, settings.queue_inbox)} mensaje(s) esperando")
+    dato(f"core.inbox tiene {await contar(conexion, settings.queue_inbox)} mensaje(s) esperando")
     dato("Nadie los consumio todavia: el Core esta 'apagado' en esta demo.")
     await seguir()
 
@@ -235,7 +244,7 @@ async def main(interactivo: bool) -> None:
     dato("en muni.events por cada destino, con rk = nombre de la cola.")
     print()
     for modulo in resultado.routed_to:
-        dato(f"  q.{modulo:22} {await contar(canal, f'q.{modulo}')} mensaje(s)")
+        dato(f"  q.{modulo:22} {await contar(conexion, f'q.{modulo}')} mensaje(s)")
     await seguir()
 
     # ---------------------------------------------------------------- 3
@@ -250,7 +259,7 @@ async def main(interactivo: bool) -> None:
     )
     await asyncio.sleep(0.4)
     repetido = await sacar(canal, settings.queue_inbox)
-    antes = {m: await contar(canal, f"q.{m}") for m in resultado.routed_to}
+    antes = {m: await contar(conexion, f"q.{m}") for m in resultado.routed_to}
 
     async with SessionFactory() as s:
         r2 = await hub(s).ingest(EventEnvelope.model_validate(json.loads(repetido.body)))
@@ -260,7 +269,7 @@ async def main(interactivo: bool) -> None:
     ok(f"estado: {r2.status.value} · duplicate={r2.duplicate}")
     dato("")
     for modulo, contaba in antes.items():
-        ahora = await contar(canal, f"q.{modulo}")
+        ahora = await contar(conexion, f"q.{modulo}")
         marca = "sin cambios" if ahora == contaba else f"CAMBIO {contaba}->{ahora}"
         dato(f"  q.{modulo:22} {contaba} -> {ahora}   ({marca})")
     dato("")
@@ -280,7 +289,7 @@ async def main(interactivo: bool) -> None:
         await mensaje.nack(requeue=False)
         ok("nack enviado · RabbitMQ lo dead-letterea a muni.dlx -> q.dlq")
         await asyncio.sleep(0.5)
-        dato(f"q.dlq tiene {await contar(canal, settings.queue_dlq)} mensaje(s)")
+        dato(f"q.dlq tiene {await contar(conexion, settings.queue_dlq)} mensaje(s)")
 
     await seguir()
 
@@ -314,10 +323,8 @@ async def main(interactivo: bool) -> None:
             ok("Le quedaban intentos: se programo el siguiente escalon de backoff")
             await asyncio.sleep(0.4)
             for delay in settings.retry_delays:
-                from app.messaging.topology import retry_queue_for
-
                 cola_espera = retry_queue_for(delay)
-                cuantos = await contar(canal, cola_espera)
+                cuantos = await contar(conexion, cola_espera)
                 if cuantos:
                     dato(f"  {cola_espera:16} {cuantos} mensaje(s) esperando {delay}s")
             dato("")
@@ -328,7 +335,11 @@ async def main(interactivo: bool) -> None:
             ok(f"Agoto los intentos: dead letter {dead_letter.reason_code}")
 
     print()
-    dato("→ En la consola: mira q.retry.5s, y en 5 segundos vuelve a q.obras")
+    primer_escalon = (settings.retry_delays or [5])[0]
+    dato(
+        f"→ En la consola: mira {retry_queue_for(primer_escalon)}, y en "
+        f"{primer_escalon} segundos vuelve a {cola_destino}"
+    )
     await seguir()
 
     # ---------------------------------------------------------------- 5
@@ -350,7 +361,7 @@ async def main(interactivo: bool) -> None:
     await asyncio.sleep(0.5)
 
     ok("Los 3 publish funcionaron sin error")
-    dato(f"core.inbox: {await contar(canal, settings.queue_inbox)} mensaje(s) esperando")
+    dato(f"core.inbox: {await contar(conexion, settings.queue_inbox)} mensaje(s) esperando")
     dato("")
     dato("El modulo que publica NO se entera de que el Core esta caido, y no se")
     dato("bloquea. La cola es durable: los mensajes sobreviven hasta un reinicio")
