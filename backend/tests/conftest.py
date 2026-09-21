@@ -12,8 +12,16 @@ sin infraestructura:
 
 from __future__ import annotations
 
-import uuid
-from collections.abc import AsyncIterator
+import os
+
+# La configuracion se fija ANTES de importar la app: `settings` se construye al
+# importar `app.core.config`, y sin esto la suite quedaria colgada del .env del
+# entorno. Cambiar RETRY_DELAYS para una demo no puede romper los tests.
+os.environ["RETRY_DELAYS"] = "5,30,120,600"
+os.environ["RABBITMQ_URL"] = "memory://"
+
+import uuid  # noqa: E402
+from collections.abc import AsyncIterator  # noqa: E402
 
 import pytest
 import pytest_asyncio

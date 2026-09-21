@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.core.config import settings
+from app.messaging.topology import retry_queue_for
 from tests.conftest import MODULE_SECRET, USER_PASSWORD
 
 pytestmark = pytest.mark.asyncio
@@ -334,7 +336,9 @@ async def test_la_topologia_se_deriva_de_las_suscripciones(client, auth):
     assert "core.inbox" in colas and "q.dlq" in colas and "q.obras" in colas
 
     # Cada escalon de backoff con su TTL y su vuelta a muni.events.
-    retry = next(q for q in topology["queues"] if q["name"] == "q.retry.5s")
+    retry = next(
+        q for q in topology["queues"] if q["name"] == retry_queue_for(settings.retry_delays[0])
+    )
     assert retry["arguments"]["x-message-ttl"] == 5000
     assert retry["arguments"]["x-dead-letter-exchange"] == "muni.events"
 

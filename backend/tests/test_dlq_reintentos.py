@@ -12,6 +12,7 @@ import uuid
 import pytest
 import pytest_asyncio
 
+from app.core.config import settings
 from app.core.context import set_actor
 from app.messaging.broker import (
     HEADER_ATTEMPT,
@@ -21,6 +22,7 @@ from app.messaging.broker import (
     InboundMessage,
     OutboundMessage,
 )
+from app.messaging.topology import retry_exchange_for
 from app.models.events import DeadLetterStatus, DeliveryStatus
 from app.repositories.event_repository import (
     DeadLetterRepository,
@@ -102,7 +104,9 @@ async def test_un_rechazo_programa_el_primer_escalon_de_backoff(services):
     # Todavia le quedan intentos: no abre dead letter.
     assert result is None
     # Y se publico en el exchange del escalon de 5s.
-    assert services["broker"].routing_keys("muni.retry.5s") == ["q.obras"]
+    assert services["broker"].routing_keys(retry_exchange_for(settings.retry_delays[0])) == [
+        "q.obras"
+    ]
 
 
 async def test_cada_rechazo_sube_de_escalon(services):
@@ -110,7 +114,11 @@ async def test_cada_rechazo_sube_de_escalon(services):
     await services["hub"].ingest(envelope)
     await services["session"].flush()
 
-    esperados = ["muni.retry.5s", "muni.retry.30s", "muni.retry.2m"]
+    esperados = [
+        retry_exchange_for(settings.retry_delays[0]),
+        retry_exchange_for(settings.retry_delays[1]),
+        "muni.retry.2m",
+    ]
     for exchange in esperados:
         services["broker"].reset()
         await services["delivery"].handle_dlq_message(_rejection(envelope, attempt=1))
