@@ -24,6 +24,7 @@ import structlog
 
 from app.core.database import utcnow
 from app.core.errors import ForbiddenError, UnauthorizedError
+from app.core.metrics import AUTH_FAILURES
 from app.core.security import (
     create_access_token,
     generate_opaque_token,
@@ -74,6 +75,10 @@ class AuthService:
         # filtra si el email existe.
         if user is None:
             logger.info("login_failed", email=email, reason="not_found")
+            AUTH_FAILURES.labels(
+                auth_type="user",
+                reason="invalid_credentials",
+            ).inc()
             raise UnauthorizedError("Credenciales invalidas.", code="INVALID_CREDENTIALS")
 
         if not verify_password(password, user.password_hash):
@@ -86,6 +91,10 @@ class AuthService:
                 reason="bad_password",
                 attempts=user.failed_login_attempts,
             )
+            AUTH_FAILURES.labels(
+                auth_type="user",
+                reason="invalid_credentials",
+            ).inc()
             raise UnauthorizedError("Credenciales invalidas.", code="INVALID_CREDENTIALS")
 
         if not user.active:
@@ -134,10 +143,18 @@ class AuthService:
 
         if module is None or not module.secret_hash:
             logger.info("module_auth_failed", module=module_name, reason="not_found")
+            AUTH_FAILURES.labels(
+                auth_type="service",
+                reason="invalid_client",
+            ).inc()
             raise UnauthorizedError("Credenciales de modulo invalidas.", code="INVALID_CREDENTIALS")
 
         if hash_opaque_token(secret) != module.secret_hash:
             logger.info("module_auth_failed", module=module_name, reason="bad_secret")
+            AUTH_FAILURES.labels(
+                auth_type="service",
+                reason="invalid_client",
+            ).inc()
             raise UnauthorizedError("Credenciales de modulo invalidas.", code="INVALID_CREDENTIALS")
 
         if not module.active:

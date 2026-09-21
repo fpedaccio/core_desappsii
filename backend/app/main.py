@@ -12,8 +12,9 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
@@ -24,9 +25,10 @@ from app.core.context import TRACE_HEADER, set_trace_id
 from app.core.database import SessionFactory, engine
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.metrics import ACTIVE_USERS, metrics_middleware
 from app.messaging.provider import connect_broker, get_broker
 from app.messaging.topology import base_topology
-from app.repositories.registry_repository import SubscriptionRepository
+from app.repositories.registry_repository import SubscriptionRepository, UserRepository
 
 logger = structlog.get_logger(__name__)
 
@@ -158,6 +160,8 @@ def create_app() -> FastAPI:
     )
 
     app.add_middleware(TraceMiddleware)
+    app.middleware("http")(metrics_middleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -180,6 +184,7 @@ def create_app() -> FastAPI:
         app.include_router(router, prefix=settings.api_prefix)
 
     _register_health(app)
+    _register_metrics(app)
     return app
 
 
@@ -250,5 +255,17 @@ def _register_health(app: FastAPI) -> None:
             },
         )
 
+def _register_metrics(app: FastAPI) -> None:
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics() -> Response:
+        async with SessionFactory() as session:
+            active_users = await UserRepository(session).count_active()
+
+        ACTIVE_USERS.set(active_users)
+
+        return Response(
+            content=generate_latest(),
+            media_type=CONTENT_TYPE_LATEST,
+        )
 
 app = create_app()

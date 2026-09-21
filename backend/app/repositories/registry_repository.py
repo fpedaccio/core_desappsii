@@ -207,6 +207,10 @@ class UserRepository(BaseRepository[User]):
         )
         return int((await self.session.execute(stmt)).scalar_one())
 
+    async def count_active(self) -> int:
+        stmt = select(func.count()).select_from(User).where(User.active.is_(True))
+        return int((await self.session.execute(stmt)).scalar_one())
+
     async def record_failed_login(self, user: User, *, max_attempts: int) -> None:
         """Suma un intento fallido y **lo confirma en la base**.
 
