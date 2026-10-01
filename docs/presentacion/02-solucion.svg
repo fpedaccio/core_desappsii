@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1280" height="720" fill="#ffffff"/>
+
+  <text x="640" y="68" text-anchor="middle" font-size="40" font-weight="700" fill="#1a1a2e">Con el patrón Adapter</text>
+  <text x="640" y="106" text-anchor="middle" font-size="22" fill="#6b7280">Los servicios piden un contrato, no una tecnología</text>
+
+  <defs>
+    <marker id="gris" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#4a5568"/>
+    </marker>
+    <marker id="verde" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+      <path d="M0,0 L10,4 L0,8 Z" fill="#2d7d46"/>
+    </marker>
+  </defs>
+
+  <!-- servicios -->
+  <text x="175" y="176" text-anchor="middle" font-size="15" font-weight="700" fill="#6b7280" letter-spacing="1">NEGOCIO</text>
+  <g>
+    <rect x="55" y="196" width="240" height="52" rx="8" fill="#ffffff" stroke="#374151" stroke-width="2"/>
+    <text x="175" y="228" text-anchor="middle" font-size="18" font-weight="600" fill="#1a1a2e">EventHubService</text>
+    <rect x="55" y="266" width="240" height="52" rx="8" fill="#ffffff" stroke="#374151" stroke-width="2"/>
+    <text x="175" y="298" text-anchor="middle" font-size="18" font-weight="600" fill="#1a1a2e">DeliveryService</text>
+    <rect x="55" y="336" width="240" height="52" rx="8" fill="#ffffff" stroke="#374151" stroke-width="2"/>
+    <text x="175" y="368" text-anchor="middle" font-size="18" font-weight="600" fill="#1a1a2e">RegistryService</text>
+    <rect x="55" y="406" width="240" height="52" rx="8" fill="#ffffff" stroke="#374151" stroke-width="2"/>
+    <text x="175" y="438" text-anchor="middle" font-size="18" font-weight="600" fill="#1a1a2e">StatsService</text>
+  </g>
+
+  <g stroke="#4a5568" stroke-width="2.5" marker-end="url(#gris)" fill="none">
+    <path d="M295,222 C360,222 380,290 440,316"/>
+    <path d="M295,292 C360,292 390,305 440,322"/>
+    <path d="M295,362 C360,362 390,350 440,334"/>
+    <path d="M295,432 C360,432 380,375 440,342"/>
+  </g>
+  <text x="360" y="186" text-anchor="middle" font-size="14" fill="#6b7280">dependen de</text>
+
+  <!-- el contrato -->
+  <rect x="450" y="262" width="270" height="134" rx="10" fill="#f8fafc" stroke="#1a1a2e" stroke-width="3"/>
+  <text x="585" y="292" text-anchor="middle" font-size="15" font-weight="700" fill="#6b7280" letter-spacing="1">EL CONTRATO</text>
+  <text x="585" y="322" text-anchor="middle" font-size="26" font-weight="700" font-family="Menlo, monospace" fill="#1a1a2e">Broker</text>
+  <line x1="480" y1="336" x2="690" y2="336" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="585" y="358" text-anchor="middle" font-size="15" font-family="Menlo, monospace" fill="#374151">publish()  consume()</text>
+  <text x="585" y="380" text-anchor="middle" font-size="15" font-family="Menlo, monospace" fill="#374151">declare()  healthy()</text>
+
+  <g stroke="#2d7d46" stroke-width="2.5" marker-end="url(#verde)" fill="none">
+    <path d="M720,300 C790,300 810,250 880,236"/>
+    <path d="M720,358 C790,358 810,410 880,424"/>
+  </g>
+  <text x="800" y="335" text-anchor="middle" font-size="14" fill="#6b7280">lo cumplen</text>
+
+  <!-- implementaciones -->
+  <rect x="890" y="182" width="330" height="108" rx="10" fill="#f0fdf4" stroke="#2d7d46" stroke-width="2.5"/>
+  <text x="1055" y="214" text-anchor="middle" font-size="22" font-weight="700" font-family="Menlo, monospace" fill="#1a1a2e">RabbitMQBroker</text>
+  <text x="1055" y="242" text-anchor="middle" font-size="16" fill="#374151">Habla AMQP de verdad</text>
+  <text x="1055" y="266" text-anchor="middle" font-size="15" fill="#6b7280">producción</text>
+
+  <rect x="890" y="370" width="330" height="108" rx="10" fill="#f0fdf4" stroke="#2d7d46" stroke-width="2.5"/>
+  <text x="1055" y="402" text-anchor="middle" font-size="22" font-weight="700" font-family="Menlo, monospace" fill="#1a1a2e">FakeBroker</text>
+  <text x="1055" y="430" text-anchor="middle" font-size="16" fill="#374151">Ruteo en memoria</text>
+  <text x="1055" y="454" text-anchor="middle" font-size="15" fill="#6b7280">tests</text>
+
+  <!-- resultado -->
+  <rect x="55" y="530" width="1165" height="124" rx="10" fill="#f8fafc" stroke="#e5e7eb" stroke-width="2"/>
+  <text x="90" y="566" font-size="17" font-weight="700" fill="#2d7d46">EL RESULTADO</text>
+
+  <text x="90" y="602" font-size="18" fill="#374151">Los 144 tests corren</text>
+  <text x="90" y="628" font-size="18" font-weight="700" fill="#1a1a2e">sin RabbitMQ instalado</text>
+
+  <text x="470" y="602" font-size="18" fill="#374151">Cambiar de broker es</text>
+  <text x="470" y="628" font-size="18" font-weight="700" fill="#1a1a2e">una línea del .env</text>
+
+  <text x="850" y="602" font-size="18" fill="#374151">Agregar Kafka no toca</text>
+  <text x="850" y="628" font-size="18" font-weight="700" fill="#1a1a2e">ni una línea de negocio</text>
+</svg>

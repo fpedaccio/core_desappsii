@@ -1,0 +1,30 @@
+Categoria,Tecnologia,Version,Para que lo usamos,Por que lo elegimos
+Lenguaje,Python,3.13,Todo el backend,"Tipado opcional y async nativo; el equipo ya lo conocia"
+Framework web,FastAPI,0.141,"API REST, inyeccion de dependencias, Swagger","Genera la documentacion OpenAPI sola desde los tipos, y su sistema de Depends nos dio la inyeccion sin traer un contenedor DI aparte"
+Servidor ASGI,Uvicorn,0.52,Correr la aplicacion,Es el servidor async estandar para FastAPI
+Validacion,Pydantic,2.13,"Validar el sobre de eventos, DTOs de entrada y salida","La validacion del sobre (UUID, fecha con zona horaria) sale de los tipos, no de ifs escritos a mano"
+Configuracion,pydantic-settings,2.14,Leer el .env con tipos,Valida la configuracion al arrancar en vez de fallar en runtime
+ORM,SQLAlchemy,2.0,Capa de acceso a datos,"Soporta async y el mismo modelo corre sobre SQLite y PostgreSQL, que es lo que permite testear sin base instalada"
+Migraciones,Alembic,1.18,Versionar el esquema,Es el companion de SQLAlchemy
+Base de datos,PostgreSQL,17,Base de datos de produccion,"JSONB para guardar los sobres de eventos y los JSON Schema"
+Base de datos,SQLite,(via aiosqlite 0.22),Base de datos de desarrollo y tests,"Arranca sin instalar nada; los tests corren en memoria"
+Driver DB,asyncpg,0.31,Conexion async a PostgreSQL,El driver async mas rapido para Postgres
+Driver DB,aiosqlite,0.22,Conexion async a SQLite,Permite que la suite corra sin servicios externos
+Mensajeria,RabbitMQ,4.3,Broker de eventos entre los 9 modulos,"DLQ y backoff por TTL de cola nativos, sin escribir un scheduler"
+Cliente AMQP,aio-pika,10.0,Hablar con RabbitMQ,"Async y con reconexion automatica; queda encerrado detras del patron Adapter"
+Autenticacion,PyJWT,2.13,Firmar y validar los tokens,Estandar para JWT en Python
+Autenticacion,cryptography,50.0,Claves RSA para firmar con RS256,Dependencia de PyJWT para firma asimetrica
+Autenticacion,bcrypt,5.0,Hashear las contrasenas de las personas,Algoritmo pensado para ser lento a proposito contra fuerza bruta
+Validacion de contratos,jsonschema,4.26,Validar el campo data de cada evento,"Permite que cada equipo declare la estructura de su evento sin que el Core conozca su negocio"
+Logging,structlog,26.1,Logs estructurados con traceId,Permite seguir una operacion entre modulos por su traceId
+Plantillas,Jinja2,3.1,Renderizar texto,Estandar en Python
+Cliente HTTP,httpx,0.28,Tests de la API y llamadas salientes,Soporta async y permite testear la app sin levantar un servidor
+Metricas,prometheus-client,0.26,Exponer metricas de la aplicacion,Formato estandar que Grafana consume directo
+Monitoreo,Prometheus,-,Recolectar las metricas,Estandar de facto para metricas
+Monitoreo,Grafana,-,Dashboard de monitoreo,Visualiza las metricas de Prometheus
+Tests,pytest,9.1,Suite de tests,Estandar en Python
+Tests,pytest-asyncio,1.4,Testear codigo async,El backend es async de punta a punta
+Tests,pytest-cov,7.1,Medir cobertura,"Configurado con umbral minimo de 85 por ciento; hoy estamos en 90.8"
+Calidad,Ruff,0.16,Linter y formateador,"Reemplaza flake8 mas black mas isort en una sola herramienta"
+CI,GitHub Actions,-,Build + Lint + Test en cada push,Tres jobs que corren en paralelo
+Control de versiones,Git + GitHub,-,Repositorio del equipo,-

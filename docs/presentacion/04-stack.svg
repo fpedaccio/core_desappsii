@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1280" height="720" fill="#ffffff"/>
+
+  <text x="640" y="72" text-anchor="middle" font-size="40" font-weight="700" fill="#1a1a2e">Stack tecnológico</text>
+  <text x="640" y="112" text-anchor="middle" font-size="21" fill="#6b7280">Módulo Core · pasamanos de eventos</text>
+
+  <!-- fila 1 -->
+  <g>
+    <rect x="60" y="170" width="360" height="180" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <rect x="60" y="170" width="360" height="6" rx="3" fill="#6366f1"/>
+    <text x="88" y="212" font-size="14" font-weight="700" fill="#6b7280" letter-spacing="1.5">LENGUAJE Y API</text>
+    <text x="88" y="254" font-size="22" font-weight="700" fill="#1a1a2e">Python 3.13</text>
+    <text x="88" y="292" font-size="22" font-weight="700" fill="#1a1a2e">FastAPI</text>
+    <text x="88" y="326" font-size="17" fill="#6b7280">Pydantic para validar</text>
+
+    <rect x="460" y="170" width="360" height="180" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <rect x="460" y="170" width="360" height="6" rx="3" fill="#d97706"/>
+    <text x="488" y="212" font-size="14" font-weight="700" fill="#6b7280" letter-spacing="1.5">DATOS</text>
+    <text x="488" y="254" font-size="22" font-weight="700" fill="#1a1a2e">PostgreSQL 17</text>
+    <text x="488" y="292" font-size="22" font-weight="700" fill="#1a1a2e">SQLAlchemy 2.0</text>
+    <text x="488" y="326" font-size="17" fill="#6b7280">SQLite en desarrollo</text>
+
+    <rect x="860" y="170" width="360" height="180" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <rect x="860" y="170" width="360" height="6" rx="3" fill="#e11d48"/>
+    <text x="888" y="212" font-size="14" font-weight="700" fill="#6b7280" letter-spacing="1.5">MENSAJERÍA</text>
+    <text x="888" y="254" font-size="22" font-weight="700" fill="#1a1a2e">RabbitMQ 4.3</text>
+    <text x="888" y="292" font-size="22" font-weight="700" fill="#1a1a2e">aio-pika</text>
+    <text x="888" y="326" font-size="17" fill="#6b7280">detrás del patrón Adapter</text>
+  </g>
+
+  <!-- fila 2 -->
+  <g>
+    <rect x="60" y="380" width="360" height="180" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <rect x="60" y="380" width="360" height="6" rx="3" fill="#0891b2"/>
+    <text x="88" y="422" font-size="14" font-weight="700" fill="#6b7280" letter-spacing="1.5">SEGURIDAD</text>
+    <text x="88" y="464" font-size="22" font-weight="700" fill="#1a1a2e">JWT · RS256</text>
+    <text x="88" y="502" font-size="22" font-weight="700" fill="#1a1a2e">bcrypt</text>
+    <text x="88" y="536" font-size="17" fill="#6b7280">contraseñas hasheadas</text>
+
+    <rect x="460" y="380" width="360" height="180" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <rect x="460" y="380" width="360" height="6" rx="3" fill="#7c3aed"/>
+    <text x="488" y="422" font-size="14" font-weight="700" fill="#6b7280" letter-spacing="1.5">OBSERVABILIDAD</text>
+    <text x="488" y="464" font-size="22" font-weight="700" fill="#1a1a2e">Prometheus + Grafana</text>
+    <text x="488" y="502" font-size="22" font-weight="700" fill="#1a1a2e">structlog</text>
+    <text x="488" y="536" font-size="17" fill="#6b7280">logs con traceId</text>
+
+    <rect x="860" y="380" width="360" height="180" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <rect x="860" y="380" width="360" height="6" rx="3" fill="#16a34a"/>
+    <text x="888" y="422" font-size="14" font-weight="700" fill="#6b7280" letter-spacing="1.5">CALIDAD</text>
+    <text x="888" y="464" font-size="22" font-weight="700" fill="#1a1a2e">pytest · 144 tests</text>
+    <text x="888" y="502" font-size="22" font-weight="700" fill="#1a1a2e">Ruff</text>
+    <text x="888" y="536" font-size="17" fill="#6b7280">90,8 % de cobertura · CI</text>
+  </g>
+
+  <!-- pie -->
+  <line x1="60" y1="606" x2="1220" y2="606" stroke="#e2e8f0" stroke-width="2"/>
+  <text x="60" y="646" font-size="18" fill="#374151">
+    <tspan font-weight="700" fill="#1a1a2e">Async de punta a punta.</tspan>
+    <tspan> Un pasamanos de eventos pasa casi todo el tiempo esperando I/O, no calculando.</tspan>
+  </text>
+  <text x="60" y="678" font-size="18" fill="#374151">
+    <tspan font-weight="700" fill="#1a1a2e">El mismo modelo sobre dos motores.</tspan>
+    <tspan> SQLAlchemy corre igual en Postgres y SQLite: los tests no piden base instalada.</tspan>
+  </text>
+</svg>

@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1280" height="720" fill="#ffffff"/>
+
+  <text x="640" y="76" text-anchor="middle" font-size="40" font-weight="700" fill="#1a1a2e">La prueba de que funciona</text>
+  <text x="640" y="116" text-anchor="middle" font-size="22" fill="#6b7280">Ningún archivo de negocio conoce RabbitMQ</text>
+
+  <!-- terminal -->
+  <rect x="130" y="170" width="1020" height="170" rx="10" fill="#1a1a2e"/>
+  <circle cx="162" cy="196" r="6" fill="#ff5f56"/>
+  <circle cx="182" cy="196" r="6" fill="#ffbd2e"/>
+  <circle cx="202" cy="196" r="6" fill="#27c93f"/>
+
+  <text x="164" y="252" font-size="19" font-family="Menlo, monospace" fill="#7ee787">$</text>
+  <text x="188" y="252" font-size="19" font-family="Menlo, monospace" fill="#e6edf3">grep -rl "aio_pika" app/services/ app/repositories/ app/api/</text>
+  <text x="164" y="288" font-size="19" font-family="Menlo, monospace" fill="#7ee787">$</text>
+  <text x="188" y="288" font-size="19" font-family="Menlo, monospace" fill="#8b949e">_</text>
+  <text x="164" y="318" font-size="16" font-family="Menlo, monospace" fill="#8b949e">(no devuelve nada)</text>
+
+  <!-- donde vive aio-pika -->
+  <text x="640" y="400" text-anchor="middle" font-size="20" fill="#374151">La librería de RabbitMQ está encerrada en</text>
+  <text x="640" y="400" text-anchor="middle" font-size="20" fill="#374151"></text>
+
+  <rect x="400" y="422" width="480" height="58" rx="8" fill="#f0fdf4" stroke="#2d7d46" stroke-width="2.5"/>
+  <text x="640" y="459" text-anchor="middle" font-size="22" font-weight="700" font-family="Menlo, monospace" fill="#1a1a2e">app/messaging/rabbitmq.py</text>
+
+  <text x="640" y="508" text-anchor="middle" font-size="19" font-weight="600" fill="#2d7d46">el único de los 50 módulos que la importa</text>
+
+  <!-- capas limpias -->
+  <g>
+    <rect x="130" y="562" width="240" height="96" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="2"/>
+    <text x="250" y="596" text-anchor="middle" font-size="16" font-weight="700" fill="#6b7280">PRESENTACIÓN</text>
+    <text x="250" y="622" text-anchor="middle" font-size="15" font-family="Menlo, monospace" fill="#374151">app/api/</text>
+    <text x="250" y="645" text-anchor="middle" font-size="15" fill="#2d7d46">sin aio-pika</text>
+
+    <rect x="390" y="562" width="240" height="96" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="2"/>
+    <text x="510" y="596" text-anchor="middle" font-size="16" font-weight="700" fill="#6b7280">NEGOCIO</text>
+    <text x="510" y="622" text-anchor="middle" font-size="15" font-family="Menlo, monospace" fill="#374151">app/services/</text>
+    <text x="510" y="645" text-anchor="middle" font-size="15" fill="#2d7d46">sin aio-pika</text>
+
+    <rect x="650" y="562" width="240" height="96" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="2"/>
+    <text x="770" y="596" text-anchor="middle" font-size="16" font-weight="700" fill="#6b7280">DATOS</text>
+    <text x="770" y="622" text-anchor="middle" font-size="15" font-family="Menlo, monospace" fill="#374151">app/repositories/</text>
+    <text x="770" y="645" text-anchor="middle" font-size="15" fill="#2d7d46">sin aio-pika</text>
+
+    <rect x="910" y="562" width="240" height="96" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="2.5"/>
+    <text x="1030" y="596" text-anchor="middle" font-size="16" font-weight="700" fill="#92400e">INFRAESTRUCTURA</text>
+    <text x="1030" y="622" text-anchor="middle" font-size="15" font-family="Menlo, monospace" fill="#374151">app/messaging/</text>
+    <text x="1030" y="645" text-anchor="middle" font-size="15" font-weight="700" fill="#92400e">acá y solo acá</text>
+  </g>
+</svg>
