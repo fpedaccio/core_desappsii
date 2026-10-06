@@ -1,0 +1,609 @@
+openapi: 3.0.3
+
+info:
+  title: Core — API de Expedientes Digitales
+  version: 1.0.0
+  description: |
+    Fachada REST sobre el **Sistema Central de Expedientes**, un sistema legado
+    que solo habla SOAP y es el único autorizado a asignar números oficiales de
+    expediente.
+
+    El Core adapta ese legado al resto de la plataforma: expone REST hacia
+    afuera, habla SOAP hacia adentro, y publica el resultado como evento
+    asincrónico para los otros 8 módulos.
+
+    ## Qué pasa si el legado no responde
+
+    `POST /expedientes` intenta numerar contra el SOAP con un **timeout de 5
+    segundos**. Según lo que ocurra, devuelve uno de dos códigos de éxito:
+
+    | Código | Cuándo | Qué recibe el cliente |
+    |---|---|---|
+    | `201 Created` | El legado respondió a tiempo | El expediente con su número oficial |
+    | `202 Accepted` | El legado no respondió en 5 s | Un comprobante para seguir el trámite |
+
+    El alta **nunca se pierde**: si el legado no contesta, el expediente queda
+    persistido en estado `PENDIENTE_NUMERACION` y un worker reintenta la
+    numeración con backoff.
+
+  contact:
+    name: Equipo 9 — Core
+    email: core@muni.uade.edu.ar
+
+servers:
+  - url: https://core.muni.uade.edu.ar/api/v1
+    description: Producción
+  - url: http://localhost:8000/api/v1
+    description: Desarrollo local
+
+tags:
+  - name: Expedientes
+    description: Alta y consulta de expedientes digitales.
+  - name: Actuaciones
+    description: Las intervenciones registradas sobre un expediente.
+
+security:
+  - bearerAuth: []
+
+paths:
+  /expedientes:
+    post:
+      tags: [Expedientes]
+      summary: Dar de alta un expediente
+      operationId: crearExpediente
+      description: |
+        Crea un expediente y le pide el número oficial al sistema legado.
+
+        **Es idempotente mediante el header `Idempotency-Key`.** Reenviar el
+        mismo request con la misma clave devuelve exactamente la misma respuesta
+        y no crea un segundo expediente. Es obligatorio justamente porque la
+        operación puede responder `202` y el cliente va a querer reintentar.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearExpedienteRequest'
+            examples:
+              reclamoDerivado:
+                summary: Expediente por un reclamo derivado a Obras
+                value:
+                  tipoTramite: RECLAMO_INFRAESTRUCTURA
+                  moduloOrigen: atencion-ciudadana
+                  referenciaExterna: TK-2026-00184
+                  solicitante:
+                    tipoDocumento: DNI
+                    numeroDocumento: "30123456"
+                    nombreCompleto: Ana Perez
+                  asunto: Bache en Av. Rivadavia 4500
+                  areaResponsable: obras
+      responses:
+        '201':
+          description: El legado numeró el expediente dentro de los 5 segundos.
+          headers:
+            Location:
+              description: URI del expediente creado.
+              schema:
+                type: string
+                format: uri
+                example: /api/v1/expedientes/EXP-2026-0001234
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expediente'
+        '202':
+          description: |
+            El legado no respondió en 5 segundos. El expediente quedó registrado
+            en estado `PENDIENTE_NUMERACION` y se está reintentando la
+            numeración. **No es un error**: el alta se conservó.
+          headers:
+            Location:
+              description: URI donde seguir el estado de la numeración.
+              schema:
+                type: string
+                format: uri
+                example: /api/v1/expedientes/solicitudes/4f1c-...
+            Retry-After:
+              description: Segundos sugeridos antes de volver a consultar.
+              schema:
+                type: integer
+                example: 15
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitudEnCurso'
+        '400':
+          $ref: '#/components/responses/SolicitudInvalida'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '403':
+          $ref: '#/components/responses/SinPermiso'
+        '409':
+          $ref: '#/components/responses/ConflictoIdempotencia'
+        '422':
+          $ref: '#/components/responses/ValidacionFallida'
+        '503':
+          $ref: '#/components/responses/LegadoCaido'
+
+    get:
+      tags: [Expedientes]
+      summary: Listar expedientes
+      operationId: listarExpedientes
+      parameters:
+        - name: areaResponsable
+          in: query
+          schema: { type: string, example: obras }
+        - name: estado
+          in: query
+          schema:
+            $ref: '#/components/schemas/EstadoExpediente'
+        - name: desde
+          in: query
+          schema: { type: string, format: date }
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: size
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 25 }
+      responses:
+        '200':
+          description: Página de resultados.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaDeExpedientes'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+
+  /expedientes/{numero}:
+    parameters:
+      - $ref: '#/components/parameters/NumeroExpediente'
+    get:
+      tags: [Expedientes]
+      summary: Consultar un expediente
+      operationId: obtenerExpediente
+      responses:
+        '200':
+          description: El expediente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expediente'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+    patch:
+      tags: [Expedientes]
+      summary: Cambiar el estado de un expediente
+      operationId: cambiarEstadoExpediente
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [estado, motivo]
+              properties:
+                estado:
+                  $ref: '#/components/schemas/EstadoExpediente'
+                motivo:
+                  type: string
+                  minLength: 3
+                  maxLength: 500
+      responses:
+        '200':
+          description: Estado actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Expediente'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '409':
+          description: La transición de estado no es válida.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /expedientes/{numero}/actuaciones:
+    parameters:
+      - $ref: '#/components/parameters/NumeroExpediente'
+    post:
+      tags: [Actuaciones]
+      summary: Registrar una actuación
+      operationId: registrarActuacion
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrearActuacionRequest'
+      responses:
+        '201':
+          description: Actuación registrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Actuacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+        '422':
+          $ref: '#/components/responses/ValidacionFallida'
+
+    get:
+      tags: [Actuaciones]
+      summary: Listar las actuaciones de un expediente
+      operationId: listarActuaciones
+      responses:
+        '200':
+          description: Las actuaciones, en orden cronológico.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Actuacion'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+  /expedientes/solicitudes/{solicitudId}:
+    get:
+      tags: [Expedientes]
+      summary: Seguir una numeración diferida
+      operationId: consultarSolicitud
+      description: |
+        Es el recurso que devuelve el `Location` de un `202`. Permite saber si
+        el legado ya asignó el número.
+      parameters:
+        - name: solicitudId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: |
+            Estado de la solicitud. Cuando `estado` es `COMPLETADA`, el campo
+            `expediente` trae el expediente ya numerado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SolicitudEnCurso'
+        '303':
+          description: |
+            Ya se completó. Redirige al expediente definitivo.
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/NoEncontrado'
+
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Token emitido por el Core, firmado con RS256.
+        Los módulos lo obtienen con `POST /auth/module-token`.
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        UUID que identifica el intento. Reenviar con la misma clave devuelve la
+        respuesta original sin volver a ejecutar la operación. Se conserva 24 h.
+      schema:
+        type: string
+        format: uuid
+
+    NumeroExpediente:
+      name: numero
+      in: path
+      required: true
+      description: Número oficial asignado por el sistema legado.
+      schema:
+        type: string
+        pattern: '^EXP-\d{4}-\d{7}$'
+        example: EXP-2026-0001234
+
+  schemas:
+
+    EstadoExpediente:
+      type: string
+      enum: [PENDIENTE_NUMERACION, INICIADO, EN_TRAMITE, RESUELTO, ARCHIVADO]
+
+    Solicitante:
+      type: object
+      required: [tipoDocumento, numeroDocumento, nombreCompleto]
+      properties:
+        tipoDocumento:
+          type: string
+          enum: [DNI, CUIT, PASAPORTE]
+        numeroDocumento:
+          type: string
+          pattern: '^\d{7,11}$'
+        nombreCompleto:
+          type: string
+          minLength: 2
+          maxLength: 180
+
+    CrearExpedienteRequest:
+      type: object
+      required: [tipoTramite, moduloOrigen, solicitante, asunto, areaResponsable]
+      properties:
+        tipoTramite:
+          type: string
+          enum:
+            - RECLAMO_INFRAESTRUCTURA
+            - HABILITACION_COMERCIAL
+            - BENEFICIO_SOCIAL
+            - DESCARGO_INFRACCION
+        moduloOrigen:
+          type: string
+          description: Debe coincidir con el módulo del token.
+          example: atencion-ciudadana
+        referenciaExterna:
+          type: string
+          description: El identificador del trámite en el módulo origen.
+          example: TK-2026-00184
+        solicitante:
+          $ref: '#/components/schemas/Solicitante'
+        asunto:
+          type: string
+          minLength: 5
+          maxLength: 500
+        areaResponsable:
+          type: string
+          example: obras
+      additionalProperties: false
+
+    Expediente:
+      type: object
+      required: [numero, estado, tipoTramite, creadoEn]
+      properties:
+        numero:
+          type: string
+          example: EXP-2026-0001234
+        estado:
+          $ref: '#/components/schemas/EstadoExpediente'
+        tipoTramite:
+          type: string
+        moduloOrigen:
+          type: string
+        referenciaExterna:
+          type: string
+          nullable: true
+        solicitante:
+          $ref: '#/components/schemas/Solicitante'
+        asunto:
+          type: string
+        areaResponsable:
+          type: string
+        creadoEn:
+          type: string
+          format: date-time
+          description: ISO-8601 con offset de zona horaria.
+          example: '2026-10-06T14:32:10.482-03:00'
+        numeradoEn:
+          type: string
+          format: date-time
+          nullable: true
+        correlationId:
+          type: string
+          format: uuid
+          description: Hilo para seguir el trámite entre módulos.
+
+    SolicitudEnCurso:
+      type: object
+      required: [solicitudId, estado, creadaEn]
+      properties:
+        solicitudId:
+          type: string
+          format: uuid
+        estado:
+          type: string
+          enum: [PENDIENTE_NUMERACION, COMPLETADA, FALLIDA]
+        creadaEn:
+          type: string
+          format: date-time
+        intentos:
+          type: integer
+          example: 2
+        proximoIntentoEn:
+          type: string
+          format: date-time
+          nullable: true
+        detalle:
+          type: string
+          example: El sistema legado no respondió dentro de los 5 segundos.
+        expediente:
+          allOf:
+            - $ref: '#/components/schemas/Expediente'
+          nullable: true
+          description: Presente solo cuando el estado es COMPLETADA.
+
+    CrearActuacionRequest:
+      type: object
+      required: [tipo, descripcion, areaInterviniente]
+      properties:
+        tipo:
+          type: string
+          enum: [PASE, INFORME, NOTIFICACION, RESOLUCION]
+        descripcion:
+          type: string
+          minLength: 5
+          maxLength: 2000
+        areaInterviniente:
+          type: string
+      additionalProperties: false
+
+    Actuacion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tipo:
+          type: string
+        descripcion:
+          type: string
+        areaInterviniente:
+          type: string
+        registradaEn:
+          type: string
+          format: date-time
+
+    PaginaDeExpedientes:
+      type: object
+      required: [items, total, page, size, pages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Expediente'
+        total: { type: integer, example: 143 }
+        page: { type: integer, example: 1 }
+        size: { type: integer, example: 25 }
+        pages: { type: integer, example: 6 }
+
+    ProblemDetails:
+      type: object
+      description: |
+        Formato de error según **RFC 7807** (`application/problem+json`).
+        Los campos `traceId` y `errors` son extensiones nuestras, permitidas por
+        la especificación.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI que identifica el tipo de problema y lo documenta.
+          example: https://core.muni.uade.edu.ar/problems/validacion-fallida
+        title:
+          type: string
+          description: Resumen legible, igual para todas las ocurrencias del tipo.
+          example: La solicitud tiene campos inválidos
+        status:
+          type: integer
+          example: 422
+        detail:
+          type: string
+          description: Explicación de **esta** ocurrencia puntual.
+          example: El campo numeroDocumento no cumple el formato esperado.
+        instance:
+          type: string
+          format: uri
+          description: URI de la ocurrencia concreta.
+          example: /api/v1/expedientes
+        traceId:
+          type: string
+          description: Extensión. Viaja también en el header X-Trace-Id.
+          example: 9f2a4c7e-1b33-4d8a-9f10-55ab20c3de91
+        errors:
+          type: array
+          description: Extensión. Un elemento por campo que falló.
+          items:
+            type: object
+            properties:
+              campo: { type: string, example: solicitante.numeroDocumento }
+              mensaje: { type: string, example: Debe tener entre 7 y 11 dígitos. }
+              restriccion: { type: string, example: pattern }
+
+  responses:
+
+    SolicitudInvalida:
+      description: El cuerpo no es JSON válido o falta el header de idempotencia.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    NoAutenticado:
+      description: Falta el token o no es válido.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://core.muni.uade.edu.ar/problems/no-autenticado
+            title: Falta autenticación
+            status: 401
+            detail: El header Authorization no trae un token válido.
+            instance: /api/v1/expedientes
+            traceId: 9f2a4c7e-1b33-4d8a-9f10-55ab20c3de91
+
+    SinPermiso:
+      description: El token no corresponde al módulo que declara el request.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    NoEncontrado:
+      description: El expediente no existe.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    ConflictoIdempotencia:
+      description: |
+        La `Idempotency-Key` ya se usó con un cuerpo distinto. Se rechaza para
+        no devolver una respuesta que no corresponde al pedido.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    ValidacionFallida:
+      description: El cuerpo no cumple el contrato.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          example:
+            type: https://core.muni.uade.edu.ar/problems/validacion-fallida
+            title: La solicitud tiene campos inválidos
+            status: 422
+            detail: 2 campos no cumplen el contrato.
+            instance: /api/v1/expedientes
+            traceId: 9f2a4c7e-1b33-4d8a-9f10-55ab20c3de91
+            errors:
+              - campo: solicitante.numeroDocumento
+                mensaje: Debe tener entre 7 y 11 dígitos.
+                restriccion: pattern
+              - campo: asunto
+                mensaje: Es un campo obligatorio y no vino en el cuerpo.
+                restriccion: required
+
+    LegadoCaido:
+      description: |
+        El sistema legado está caído de forma prolongada y el circuit breaker
+        está abierto. A diferencia del `202`, acá **no se aceptó** el alta.
+      headers:
+        Retry-After:
+          schema: { type: integer, example: 60 }
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
