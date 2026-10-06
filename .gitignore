@@ -26,3 +26,5 @@ dist/
 *.egg-info/
 dist/
 build/
+
+# Los entregables se regeneran con docs/entrega-rest/build.sh

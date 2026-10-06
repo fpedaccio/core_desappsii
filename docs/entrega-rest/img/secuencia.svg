@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" width="1400" height="900" font-family="Helvetica, Arial, sans-serif">
+  <rect width="1400" height="900" fill="#ffffff"/>
+
+  <text x="700" y="40" text-anchor="middle" font-size="26" font-weight="700" fill="#1a1a2e">Alta de expediente — REST propia → SOAP legado → evento → REST externo</text>
+
+  <!-- leyenda -->
+  <line x1="470" y1="64" x2="520" y2="64" stroke="#1e3a8a" stroke-width="2.5"/>
+  <text x="528" y="69" font-size="15" fill="#374151">sincrónico</text>
+  <line x1="640" y1="64" x2="690" y2="64" stroke="#15803d" stroke-width="2.5" stroke-dasharray="7,5"/>
+  <text x="698" y="69" font-size="15" fill="#374151">asincrónico</text>
+
+  <defs>
+    <marker id="aS" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto">
+      <path d="M0,0 L9,3.5 L0,7 Z" fill="#1e3a8a"/>
+    </marker>
+    <marker id="aA" markerWidth="9" markerHeight="7" refX="8.5" refY="3.5" orient="auto">
+      <path d="M0,0 L9,3.5 L0,7 Z" fill="#15803d"/>
+    </marker>
+  </defs>
+
+  <!-- franjas de tramo -->
+  <rect x="40" y="150" width="1320" height="370" rx="8" fill="#eef2ff" opacity="0.55"/>
+  <text x="56" y="172" font-size="14" font-weight="700" fill="#1e3a8a" letter-spacing="1">TRAMO SINCRÓNICO · el cliente espera · presupuesto 5 s</text>
+
+  <rect x="40" y="540" width="1320" height="320" rx="8" fill="#f0fdf4" opacity="0.6"/>
+  <text x="56" y="562" font-size="14" font-weight="700" fill="#15803d" letter-spacing="1">TRAMO ASINCRÓNICO · el cliente ya recibió respuesta</text>
+
+  <!-- actores -->
+  <g font-size="14" font-weight="700" fill="#1a1a2e" text-anchor="middle">
+    <rect x="52" y="92" width="180" height="46" rx="8" fill="#fff" stroke="#374151" stroke-width="2"/>
+    <text x="142" y="112">Atención Ciudadana</text>
+    <text x="142" y="130" font-size="12" font-weight="400" fill="#6b7280">módulo cliente</text>
+
+    <rect x="292" y="92" width="180" height="46" rx="8" fill="#fff" stroke="#1e3a8a" stroke-width="2.5"/>
+    <text x="382" y="112">Core</text>
+    <text x="382" y="130" font-size="12" font-weight="400" fill="#6b7280">fachada REST</text>
+
+    <rect x="532" y="92" width="180" height="46" rx="8" fill="#fef2f2" stroke="#b91c1c" stroke-width="2.5"/>
+    <text x="622" y="112">Sist. Expedientes</text>
+    <text x="622" y="130" font-size="12" font-weight="400" fill="#6b7280">SOAP legado</text>
+
+    <rect x="772" y="92" width="180" height="46" rx="8" fill="#fff" stroke="#374151" stroke-width="2"/>
+    <text x="862" y="112">RabbitMQ</text>
+    <text x="862" y="130" font-size="12" font-weight="400" fill="#6b7280">muni.inbox</text>
+
+    <rect x="1012" y="92" width="150" height="46" rx="8" fill="#fff" stroke="#374151" stroke-width="2"/>
+    <text x="1087" y="112">Obras</text>
+    <text x="1087" y="130" font-size="12" font-weight="400" fill="#6b7280">consumidor</text>
+
+    <rect x="1202" y="92" width="150" height="46" rx="8" fill="#fff" stroke="#374151" stroke-width="2"/>
+    <text x="1277" y="112">Servicio externo</text>
+    <text x="1277" y="130" font-size="12" font-weight="400" fill="#6b7280">REST</text>
+  </g>
+
+  <!-- lineas de vida -->
+  <g stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="5,5">
+    <line x1="142" y1="140" x2="142" y2="866"/>
+    <line x1="382" y1="140" x2="382" y2="866"/>
+    <line x1="622" y1="140" x2="622" y2="866"/>
+    <line x1="862" y1="140" x2="862" y2="866"/>
+    <line x1="1087" y1="140" x2="1087" y2="866"/>
+    <line x1="1277" y1="140" x2="1277" y2="866"/>
+  </g>
+
+  <!-- ===== SINCRONICO ===== -->
+  <g font-size="13.5" fill="#1a1a2e">
+    <line x1="142" y1="200" x2="374" y2="200" stroke="#1e3a8a" stroke-width="2.5" marker-end="url(#aS)"/>
+    <text x="258" y="192" text-anchor="middle" font-weight="600">1 · POST /api/v1/expedientes</text>
+    <text x="258" y="214" text-anchor="middle" font-size="12" fill="#6b7280" font-family="Menlo, monospace">Idempotency-Key: 7c9e…</text>
+
+    <rect x="374" y="228" width="16" height="54" fill="#1e3a8a" opacity="0.18"/>
+    <text x="400" y="246" font-size="13">2 · valida contrato, token y que el módulo sea el suyo</text>
+    <text x="400" y="272" font-size="13">3 · persiste el expediente en <tspan font-family="Menlo, monospace" font-size="12">PENDIENTE_NUMERACION</tspan></text>
+
+    <line x1="390" y1="310" x2="614" y2="310" stroke="#b91c1c" stroke-width="2.5" marker-end="url(#aS)"/>
+    <text x="502" y="302" text-anchor="middle" font-weight="600" fill="#b91c1c">4 · SOAP asignarNumero()</text>
+    <text x="502" y="324" text-anchor="middle" font-size="12" fill="#b91c1c" font-weight="700">timeout 5 s</text>
+  </g>
+
+  <!-- alt -->
+  <rect x="330" y="344" width="700" height="164" rx="6" fill="none" stroke="#94a3b8" stroke-width="1.8"/>
+  <rect x="330" y="344" width="46" height="22" fill="#94a3b8"/>
+  <text x="353" y="360" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">alt</text>
+
+  <text x="386" y="360" font-size="13" font-weight="700" fill="#15803d">responde dentro de los 5 s</text>
+  <line x1="614" y1="386" x2="392" y2="386" stroke="#1e3a8a" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#aS)"/>
+  <text x="503" y="378" text-anchor="middle" font-size="13">EXP-2026-0001234</text>
+  <line x1="374" y1="412" x2="150" y2="412" stroke="#1e3a8a" stroke-width="2.5" marker-end="url(#aS)"/>
+  <text x="262" y="404" text-anchor="middle" font-size="13" font-weight="700" fill="#15803d">201 Created + Location</text>
+
+  <line x1="330" y1="428" x2="1030" y2="428" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="7,5"/>
+  <text x="386" y="446" font-size="13" font-weight="700" fill="#b91c1c">no responde en 5 s</text>
+
+  <line x1="374" y1="476" x2="150" y2="476" stroke="#1e3a8a" stroke-width="2.5" marker-end="url(#aS)"/>
+  <text x="262" y="468" text-anchor="middle" font-size="13" font-weight="700" fill="#b45309">202 Accepted + Location + Retry-After</text>
+  <text x="640" y="470" font-size="12.5" fill="#6b7280">el expediente ya quedó registrado;</text>
+  <text x="640" y="490" font-size="12.5" fill="#6b7280">un worker reintenta la numeración (15 s → 1 m → 5 m → 15 m)</text>
+
+  <!-- corte -->
+  <line x1="40" y1="530" x2="1360" y2="530" stroke="#1a1a2e" stroke-width="2.5" stroke-dasharray="10,6"/>
+  <text x="700" y="524" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1a2e">acá termina lo que el cliente espera</text>
+
+  <!-- ===== ASINCRONICO ===== -->
+  <g font-size="13.5" fill="#1a1a2e">
+    <line x1="390" y1="602" x2="854" y2="602" stroke="#15803d" stroke-width="2.5" stroke-dasharray="7,5" marker-end="url(#aA)"/>
+    <text x="622" y="594" text-anchor="middle" font-weight="600">5 · publica caseFileCreated</text>
+    <text x="622" y="616" text-anchor="middle" font-size="12" fill="#6b7280">exchange muni.inbox, fanout</text>
+
+    <line x1="870" y1="660" x2="1079" y2="660" stroke="#15803d" stroke-width="2.5" stroke-dasharray="7,5" marker-end="url(#aA)"/>
+    <text x="974" y="652" text-anchor="middle" font-weight="600">6 · entrega en q.obras</text>
+
+    <rect x="1079" y="676" width="16" height="40" fill="#15803d" opacity="0.18"/>
+    <text x="1104" y="700" font-size="13">7 · crea la orden de trabajo</text>
+
+    <line x1="1095" y1="744" x2="1269" y2="744" stroke="#15803d" stroke-width="2.5" stroke-dasharray="7,5" marker-end="url(#aA)"/>
+    <text x="1182" y="736" text-anchor="middle" font-weight="600">8 · POST externo</text>
+    <text x="1182" y="757" text-anchor="middle" font-size="12" fill="#6b7280">aviso al vecino</text>
+
+    <line x1="1079" y1="800" x2="878" y2="800" stroke="#15803d" stroke-width="2.5" stroke-dasharray="7,5" marker-end="url(#aA)"/>
+    <text x="978" y="792" text-anchor="middle" font-weight="600">9 · publica workOrderScheduled</text>
+
+    <line x1="854" y1="846" x2="390" y2="846" stroke="#15803d" stroke-width="2.5" stroke-dasharray="7,5" marker-end="url(#aA)"/>
+    <text x="622" y="838" text-anchor="middle" font-weight="600">10 · el hub lo registra y lo rutea</text>
+  </g>
+</svg>

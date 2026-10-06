@@ -10,6 +10,10 @@
 | 4 | Diagrama de secuencia | [§4](#4-diagrama-de-secuencia) |
 | 5 | Decisiones justificadas | [§5](#5-decisiones-justificadas) |
 
+**Para entregar:** `entrega-servicios-rest.pdf` o `entrega-servicios-rest.docx`.
+Se regeneran desde este mismo archivo con `./build.sh` (necesita `pandoc` y
+`typst`; el diagrama, `rsvg-convert`).
+
 ---
 
 ## El escenario
@@ -284,43 +288,48 @@ Retry-After: 15
 
 Los tramos **sincrónicos** van en línea llena, los **asincrónicos** en punteada.
 
+![Diagrama de secuencia](img/secuencia.png)
+
+<details>
+<summary>Fuente del diagrama (Mermaid)</summary>
+
 ```mermaid
 sequenceDiagram
     autonumber
-    participant M as Atención Ciudadana<br/>(módulo cliente)
-    participant C as Core<br/>(fachada REST)
-    participant L as Sistema Expedientes<br/>(SOAP legado)
+    participant M as Atención Ciudadana
+    participant C as Core (fachada REST)
+    participant L as Sist. Expedientes (SOAP)
     participant Q as RabbitMQ
-    participant O as Obras<br/>(consumidor)
-    participant X as Servicio externo<br/>(REST)
+    participant O as Obras
+    participant X as Servicio externo
 
     rect rgb(235, 240, 255)
     Note over M,L: TRAMO SINCRÓNICO — el cliente espera
-    M->>+C: POST /api/v1/expedientes<br/>Idempotency-Key: 7c9e...
+    M->>+C: POST /api/v1/expedientes (Idempotency-Key)
     C->>C: valida contrato y token
     C->>C: persiste PENDIENTE_NUMERACION
-    C->>+L: SOAP asignarNumero()<br/>timeout 5 s
+    C->>+L: SOAP asignarNumero() — timeout 5 s
     alt Responde dentro de los 5 s
         L-->>-C: EXP-2026-0001234
-        C->>C: estado INICIADO
         C-->>M: 201 Created + Location
     else No responde en 5 s
         C-->>-M: 202 Accepted + Location + Retry-After
-        Note over C,L: Un worker reintenta<br/>con backoff
+        Note over C,L: Un worker reintenta con backoff
     end
     end
 
     rect rgb(240, 255, 240)
     Note over C,X: TRAMO ASINCRÓNICO — el cliente ya recibió respuesta
-    C-->>Q: publica caseFileCreated<br/>(muni.inbox, fanout)
+    C-->>Q: publica caseFileCreated
     Q-->>O: entrega en q.obras
     O->>O: crea la orden de trabajo
-    O-->>X: POST al servicio externo<br/>(notificación al vecino)
-    X-->>O: 200 OK
+    O-->>X: POST al servicio externo
     O-->>Q: publica workOrderScheduled
     Q-->>C: el hub lo registra y rutea
     end
 ```
+
+</details>
 
 **La lectura del diagrama:**
 
