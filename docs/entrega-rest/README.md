@@ -3,7 +3,7 @@
 **Módulo 9 — Core.** Clase 10, Desarrollo de Aplicaciones II.
 
 | # | Entregable | Dónde |
-|---|---|---|
+|:---|:---|:---|
 | 1 | Catálogo de endpoints | [§1](#1-catálogo-de-endpoints) — 7 operaciones |
 | 2 | Contrato OpenAPI | [openapi-expedientes.yaml](openapi-expedientes.yaml) — 7 operaciones, todas con respuesta de error |
 | 3 | Ejemplos JSON | [§3](#3-ejemplos-json) — éxito y error en Problem Details |
@@ -25,12 +25,10 @@ autorizado a asignar números oficiales** de expediente (`EXP-2026-0001234`).
 El Core expone una **fachada REST** sobre ese legado:
 
 ```
-Módulos          REST            Core            SOAP          Legado
-nuevos      ───────────►   (adapta protocolo)  ────────►   Expedientes
-                                   │
-                                   │ evento asincrónico
-                                   ▼
-                              los otros 8 módulos
+Módulos nuevos  ──REST──►  Core  ──SOAP──►  Sistema Expedientes (legado)
+                        (adapta protocolo)
+                               │
+                               └──evento──►  los otros 8 módulos
 ```
 
 **Por qué le toca al Core:** es el módulo de integración. Adaptar un protocolo
@@ -51,13 +49,26 @@ Base: `https://core.muni.uade.edu.ar/api/v1`. Todos requieren
 POST /expedientes
 ```
 
-| | |
-|---|---|
-| **Headers** | `Idempotency-Key: <uuid>` **(obligatorio)**, `Content-Type: application/json` |
-| **Request** | `tipoTramite`, `moduloOrigen`, `solicitante{tipoDocumento, numeroDocumento, nombreCompleto}`, `asunto`, `areaResponsable`, `referenciaExterna` (opcional) |
+**Headers**
+
+- `Idempotency-Key: <uuid>` — **obligatorio**
+- `Content-Type: application/json`
+
+**Cuerpo**
+
+| Campo | Obligatorio | Descripción |
+|:---|:---|:---|
+| `tipoTramite` | sí | `RECLAMO_INFRAESTRUCTURA`, `HABILITACION_COMERCIAL`, `BENEFICIO_SOCIAL` o `DESCARGO_INFRACCION` |
+| `moduloOrigen` | sí | Tiene que coincidir con el módulo del token |
+| `solicitante` | sí | `{tipoDocumento, numeroDocumento, nombreCompleto}` |
+| `asunto` | sí | Entre 5 y 500 caracteres |
+| `areaResponsable` | sí | El área que va a tramitarlo |
+| `referenciaExterna` | no | El identificador del trámite en el módulo origen |
+
+**Respuestas**
 
 | Código | Cuándo | Respuesta |
-|---|---|---|
+|:---|:---|:---|
 | `201 Created` | El legado numeró dentro de los 5 s | `Expediente` + header `Location` |
 | `202 Accepted` | El legado **no** respondió en 5 s | `SolicitudEnCurso` + `Location` + `Retry-After` |
 | `400 Bad Request` | JSON mal formado, o falta `Idempotency-Key` | Problem Details |
@@ -74,9 +85,9 @@ GET /expedientes?areaResponsable=obras&estado=EN_TRAMITE&page=1&size=25
 ```
 
 | Código | Respuesta |
-|---|---|
-| `200 OK` | `{items[], total, page, size, pages}` |
-| `401` | Problem Details |
+|:---|:---|
+| `200 OK` | `{ items[], total, page, size, pages }` |
+| `401 Unauthorized` | Problem Details |
 
 ### 3. Consultar un expediente
 
@@ -85,9 +96,9 @@ GET /expedientes/{numero}
 ```
 
 | Código | Respuesta |
-|---|---|
+|:---|:---|
 | `200 OK` | `Expediente` |
-| `401` · `404` | Problem Details |
+| `401 Unauthorized` · `404 Not Found` | Problem Details |
 
 ### 4. Cambiar el estado
 
@@ -98,7 +109,7 @@ PATCH /expedientes/{numero}
 Request: `{estado, motivo}`. El motivo es obligatorio y queda en la auditoría.
 
 | Código | Cuándo |
-|---|---|
+|:---|:---|
 | `200 OK` | Estado actualizado |
 | `401` · `404` | Problem Details |
 | `409 Conflict` | La transición no es válida (ej. `ARCHIVADO` → `EN_TRAMITE`) |
@@ -112,7 +123,7 @@ POST /expedientes/{numero}/actuaciones
 Headers: `Idempotency-Key`. Request: `{tipo, descripcion, areaInterviniente}`.
 
 | Código | Respuesta |
-|---|---|
+|:---|:---|
 | `201 Created` | `Actuacion` |
 | `401` · `404` · `422` | Problem Details |
 
@@ -123,9 +134,9 @@ GET /expedientes/{numero}/actuaciones
 ```
 
 | Código | Respuesta |
-|---|---|
+|:---|:---|
 | `200 OK` | `Actuacion[]`, en orden cronológico |
-| `401` · `404` | Problem Details |
+| `401 Unauthorized` · `404 Not Found` | Problem Details |
 
 ### 7. Seguir una numeración diferida
 
@@ -136,7 +147,7 @@ GET /expedientes/solicitudes/{solicitudId}
 Es el recurso al que apunta el `Location` de un `202`.
 
 | Código | Cuándo |
-|---|---|
+|:---|:---|
 | `200 OK` | `SolicitudEnCurso`. Si `estado` es `COMPLETADA`, trae el expediente |
 | `303 See Other` | Ya se completó; redirige al expediente definitivo |
 | `401` · `404` | Problem Details |
@@ -249,7 +260,7 @@ X-Trace-Id: 9f2a4c7e-1b33-4d8a-9f10-55ab20c3de91
 **Los cinco campos de RFC 7807:**
 
 | Campo | Para qué |
-|---|---|
+|:---|:---|
 | `type` | URI que identifica **la clase** de problema. Es la clave de desambiguación: dos errores distintos con el mismo `status` tienen `type` distinto. |
 | `title` | Resumen legible, **igual** para todas las ocurrencias del tipo. |
 | `status` | El código HTTP, repetido en el cuerpo para cuando se loguea solo el body. |
@@ -289,6 +300,8 @@ Retry-After: 15
 Los tramos **sincrónicos** van en línea llena, los **asincrónicos** en punteada.
 
 ![Diagrama de secuencia](img/secuencia.png)
+
+> El diagrama en alta resolución está en [`img/secuencia.png`](img/secuencia.png) (2800 × 1800), por si hace falta ampliarlo.
 
 <details>
 <summary>Fuente del diagrama (Mermaid)</summary>
@@ -334,7 +347,7 @@ sequenceDiagram
 **La lectura del diagrama:**
 
 | Tramo | Tipo | Por qué |
-|---|---|---|
+|:---|:---|:---|
 | Módulo → Core | **Sincrónico** | El cliente necesita saber si se aceptó el alta. |
 | Core → SOAP legado | **Sincrónico, con timeout de 5 s** | Es el único que asigna el número. Pero el timeout es corto a propósito: no se le traslada al cliente la lentitud del legado. |
 | Core → RabbitMQ | **Asincrónico** | El cliente ya recibió su respuesta. Que Obras se entere no es su problema. |
@@ -373,7 +386,7 @@ respuesta vieja sería mentirle al cliente sobre lo que acaba de pedir.
 **En la URI: `/api/v1/...`**
 
 | Alternativa | Por qué no |
-|---|---|
+|:---|:---|
 | Header `Accept: application/vnd.muni.v1+json` | Más purista, pero no se ve en el navegador ni en un log, y con 9 equipos integrando, lo que no se ve genera consultas. |
 | Query param `?version=1` | Se pierde al copiar URLs y ensucia el cacheo. |
 
@@ -387,7 +400,7 @@ opcional **no** rompe y va en `v1`.
 ### 5.3 — Seguridad
 
 | | |
-|---|---|
+|:---|:---|
 | **Transporte** | HTTPS obligatorio. En producción el `307` de HTTP a HTTPS está deshabilitado: se rechaza, para que un token no viaje en claro ni una vez. |
 | **Autenticación** | JWT firmado con **RS256**. Los módulos lo obtienen con `POST /auth/module-token` usando su secret de máquina. |
 | **Autorización** | El token lleva el módulo. Si `moduloOrigen` del cuerpo no coincide, `403`: ningún equipo puede dar de alta expedientes en nombre de otro. |
@@ -423,7 +436,7 @@ el resto, y un worker reintenta la numeración con backoff.
 #### Por qué no las alternativas
 
 | Opción | Por qué no |
-|---|---|
+|:---|:---|
 | `504 Gateway Timeout` | Dice "no se hizo nada", y es falso: el expediente ya está registrado. Induce al cliente a reintentar algo que ya existe. |
 | `500` | Peor: sugiere un bug nuestro cuando el problema es de un tercero. |
 | Esperar más de 5 s | Traslada la lentitud del legado a los 9 módulos. Con 5 s el cliente tiene una respuesta acotada siempre. |
