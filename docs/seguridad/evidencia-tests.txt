@@ -1,0 +1,113 @@
+
+==========================================================================
+✓ SEC-01 — Un modulo no accede al trafico en el que no participa
+  VEREDICTO: CUMPLE
+--------------------------------------------------------------------------
+  'habilitaciones' no es ni origen ni destinatario del evento d1a9a5a6-73de-4bc5-b381-4994f9ef363a, publicado por 'atencion-ciudadana'
+  GET /events (token de habilitaciones) -> HTTP 200, 3 resultados
+    el evento privado aparece en el listado: False
+  GET /events?sourceModule=atencion-ciudadana (forzando el filtro) -> 0 eventos privados filtrados
+  GET /dashboard/modules/atencion-ciudadana -> HTTP 403
+
+==========================================================================
+✓ SEC-02 — Las funciones de administracion rechazan a un modulo comun
+  VEREDICTO: CUMPLE
+--------------------------------------------------------------------------
+  GET   /dashboard/global                  (rentas) -> HTTP 403
+  POST  /modules/obras/rotate-secret       (rentas) -> HTTP 403
+  POST  /dlq/retry-bulk                    (rentas) -> HTTP 403
+  POST  /topology/apply                    (rentas) -> HTTP 403
+  GET   /dashboard/global              (admin)  -> HTTP 200  (control positivo)
+
+==========================================================================
+✓ SEC-03 — Sin credencial valida no se accede; la firma RS256 frena la manipulacion
+  VEREDICTO: CUMPLE
+--------------------------------------------------------------------------
+  sin header Authorization            -> HTTP 401
+  token con formato invalido          -> HTTP 401
+  token firmado con otra clave RSA    -> HTTP 401  (intentaba isAdmin=true)
+  payload alterado a isAdmin=true     -> HTTP 401  (firma RS256 no valida)
+
+==========================================================================
+✓ SEC-05 — El login no revela si un email existe
+  VEREDICTO: CUMPLE
+--------------------------------------------------------------------------
+  email inexistente        -> HTTP 401  code=INVALID_CREDENTIALS  "Credenciales invalidas."
+  email real, clave mala   -> HTTP 401  code=INVALID_CREDENTIALS  "Credenciales invalidas."
+  (se ignora traceId, que es distinto por request a proposito)
+  respuestas indistinguibles: True
+
+==========================================================================
+✗ SEC-06 — El login limita la tasa de intentos por origen
+  VEREDICTO: NO CUMPLE
+--------------------------------------------------------------------------
+  40 intentos de login seguidos contra un email inexistente
+    respuestas: [401]   HTTP 429 recibidos: 0
+    no hay middleware de rate limiting en la app (grep: slowapi/Limiter/rate_limit sin resultados)
+
+==========================================================================
+✓ SEC-07 — El sobre rechaza campos no previstos y fechas ambiguas
+  VEREDICTO: CUMPLE
+--------------------------------------------------------------------------
+  sobre bien formado                       -> HTTP 202
+  sobre + campos no previstos (isAdmin)    -> HTTP 422
+     []
+  occurredAt sin zona horaria              -> HTTP 422
+
+==========================================================================
+✗ SEC-08 — Solo el modulo duenio puede escribir el JSON Schema de su evento
+  VEREDICTO: NO CUMPLE
+--------------------------------------------------------------------------
+  'workOrderScheduled' pertenece a: obras
+  PUT /event-types/workOrderScheduled/schema  (token de rentas) -> HTTP 200
+    schema quedo como: {"type": "object", "required": ["inyectadoPorRentas"]}
+    -> rentas reescribio el contrato de un evento de obras
+
+==========================================================================
+✓ SEC-09 — El contenido de un evento solo lo ven origen, destinatarios y el admin
+  VEREDICTO: CUMPLE
+--------------------------------------------------------------------------
+  evento publicado por 'atencion-ciudadana', en el que 'habilitaciones' no participa: d1a9a5a6-73de-4bc5-b381-4994f9ef363a
+  GET /events/{id}  (token de habilitaciones) -> HTTP 404
+  GET /events/{id}  (admin)              -> HTTP 200  (control positivo)
+    el admin si ve el data: {"ticketId": "TK-DEMO-001", "category": "INFRASTRUCTURE"}
+
+==========================================================================
+✗ SEC-10 — Los datos sensibles no quedan en claro ni en la base ni en los logs
+  VEREDICTO: NO CUMPLE
+--------------------------------------------------------------------------
+  modules.secret_hash de 'obras': f0609c435dc63902...  (64 chars, hex=True)
+  GET /modules (admin): el secreto NO viaja en la respuesta: True
+  app/services/event_hub_service.py:371 escribe el cuerpo crudo en el log: True
+     logger.warning("malformed_message", queue=queue, preview=raw_body[:200])
+     -> si un modulo manda un mensaje malformado con datos de un ciudadano,
+        esos datos quedan en el log de la aplicacion.
+
+==========================================================================
+✓ SEC-04 — La cuenta se bloquea tras 5 intentos fallidos
+  VEREDICTO: CUMPLE
+--------------------------------------------------------------------------
+  intento fallido 1/5 -> HTTP 401 INVALID_CREDENTIALS
+  intento fallido 2/5 -> HTTP 401 INVALID_CREDENTIALS
+  intento fallido 3/5 -> HTTP 401 INVALID_CREDENTIALS
+  intento fallido 4/5 -> HTTP 401 INVALID_CREDENTIALS
+  intento fallido 5/5 -> HTTP 401 INVALID_CREDENTIALS
+  ahora con la contrasena CORRECTA -> HTTP 403 ACCOUNT_INACTIVE
+     La cuenta esta desactivada. Pedile a alguien de tu equipo que la reactive.
+
+
+==========================================================================
+RESUMEN
+==========================================================================
+  SEC-01  ✓ CUMPLE     Un modulo no accede al trafico en el que no participa
+  SEC-02  ✓ CUMPLE     Las funciones de administracion rechazan a un modulo comun
+  SEC-03  ✓ CUMPLE     Sin credencial valida no se accede; la firma RS256 frena la manipulacion
+  SEC-04  ✓ CUMPLE     La cuenta se bloquea tras 5 intentos fallidos
+  SEC-05  ✓ CUMPLE     El login no revela si un email existe
+  SEC-06  ✗ NO CUMPLE  El login limita la tasa de intentos por origen
+  SEC-07  ✓ CUMPLE     El sobre rechaza campos no previstos y fechas ambiguas
+  SEC-08  ✗ NO CUMPLE  Solo el modulo duenio puede escribir el JSON Schema de su evento
+  SEC-09  ✓ CUMPLE     El contenido de un evento solo lo ven origen, destinatarios y el admin
+  SEC-10  ✗ NO CUMPLE  Los datos sensibles no quedan en claro ni en la base ni en los logs
+
+  7/10 criterios cumplen. 3 hallazgos.
