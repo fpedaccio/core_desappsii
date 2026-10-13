@@ -10,10 +10,12 @@ tablas desde cero.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 
 import structlog
 
+from app.core.config import settings
 from app.core.database import Base, SessionFactory, engine
 from app.core.logging import configure_logging
 from app.core.security import generate_opaque_token, hash_opaque_token, hash_password
@@ -30,12 +32,19 @@ from app.seeds.board_events import DESCRIPTIONS, MISMATCHES, MODULES
 
 logger = structlog.get_logger(__name__)
 
-SEED_PASSWORD = "Cambiala123"
+SEED_PASSWORD = os.environ.get("SEED_INITIAL_PASSWORD", "Cambiala123")
 """Contrasena de las cuentas iniciales. Es de desarrollo: hay que cambiarla."""
 
 
 async def run(*, drop: bool = False) -> None:
     configure_logging()
+    if settings.is_production:
+        if drop:
+            raise RuntimeError("No se permite --drop en produccion.")
+        if SEED_PASSWORD == "Cambiala123" or len(SEED_PASSWORD) < 16:
+            raise RuntimeError(
+                "Produccion requiere SEED_INITIAL_PASSWORD de al menos 16 caracteres."
+            )
 
     async with engine.begin() as connection:
         if drop:
@@ -171,10 +180,13 @@ def _report(counts: dict[str, int], secrets: dict[str, str]) -> None:
     print(summary or "nada nuevo: ya estaba todo cargado")
 
     print("\n=== Entrar al dashboard (personas) ===")
-    print(f"Una cuenta inicial por equipo, todas con la contrasena {SEED_PASSWORD!r}:\n")
+    if settings.is_production:
+        print("Contraseña inicial: la configurada en SEED_INITIAL_PASSWORD (no se muestra).")
+    else:
+        print(f"Una cuenta inicial por equipo, todas con la contrasena {SEED_PASSWORD!r}:\n")
     print(
         '  POST /api/v1/auth/login  {"email": "<modulo>@muni.uade.edu.ar", '
-        f'"password": "{SEED_PASSWORD}"}}'
+        '"password": "<contraseña inicial>"}'
     )
     print("\nCambiala en el primer ingreso, y despues cada equipo crea las cuentas")
     print("de sus integrantes con POST /api/v1/users.")

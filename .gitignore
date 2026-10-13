@@ -28,3 +28,8 @@ dist/
 build/
 
 # Los entregables se regeneran con docs/entrega-rest/build.sh
+
+# Local deployment credentials and evidence
+deploy/.env
+deploy/secrets/
+deploy/private-logs/
