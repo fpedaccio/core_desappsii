@@ -105,3 +105,15 @@ max-file 3. Aplicada mediante recreación de contenedores, conservando
 volúmenes y realizando antes un respaldo PostgreSQL.
 Opciones verificadas mediante docker inspect; smoke posterior PASS.
 Este límite cubre stdout/stderr de Docker, no todos los archivos del servidor.
+
+## Prueba controlada de reintento y agotamiento en AWS
+
+Evento: 66f4aada-e02c-4590-8ee0-184cd7427e48.
+Se configuraron dos intentos totales únicamente para su entrega a Obras,
+sin modificar la suscripción. Ambos mensajes se rechazaron sin reencolar.
+Resultado: reintento recibido y entrega DEAD con dead letter OPEN,
+con dos intentos registrados.
+
+La prueba verifica un reintento y su agotamiento. No verifica todos los
+escalones, ausencia de duplicados ni recuperación manual desde la DLQ.
+El registro OPEN se conserva como evidencia de una falla provocada.
