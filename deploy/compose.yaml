@@ -7,7 +7,7 @@ x-app: &app
   environment: &environment
     ENVIRONMENT: production
     DEBUG: "false"
-    DATABASE_URL: postgresql+asyncpg://core:${POSTGRES_PASSWORD:?Run prepare_local.py}@postgres:5432/muni_core
+    DATABASE_URL: postgresql+asyncpg://core_app:${APP_DB_PASSWORD:?Missing APP_DB_PASSWORD}@postgres:5432/muni_core
     RABBITMQ_URL: amqp://core:${RABBITMQ_PASSWORD:?Run prepare_local.py}@rabbitmq:5672/core
     BROKER_REQUIRED: "true"
     JWT_PRIVATE_KEY_FILE: /run/secrets/jwt_private_key

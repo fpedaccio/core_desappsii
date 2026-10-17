@@ -1,0 +1,19 @@
+#!/usr/bin/python3
+from pathlib import Path
+from urllib.parse import urlencode
+from urllib.request import urlopen
+
+try:
+    token = Path("/etc/core-duckdns.token").read_text().strip()
+    query = urlencode({
+        "domains": "core-uade-2026",
+        "token": token,
+        "ip": "",
+    })
+    with urlopen("https://www.duckdns.org/update?" + query, timeout=20) as response:
+        result = response.read().decode().strip()
+    if result != "OK":
+        raise RuntimeError()
+except Exception:
+    raise SystemExit("FAIL: no se pudo actualizar DuckDNS.")
+print("PASS: DuckDNS actualizado.")

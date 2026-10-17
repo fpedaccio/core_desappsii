@@ -1,0 +1,38 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+exec 9>/run/lock/core-rabbitmq-tls.lock
+flock -n 9 || exit 0
+
+cd /home/ubuntu/core-deploy/core-backend/deploy
+tmpdir=$(mktemp -d)
+trap 'rm -rf "$tmpdir"' EXIT
+
+source=/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/core-uade-2026.duckdns.org/core-uade-2026.duckdns.org
+docker compose -f compose.yaml -f compose.https.yaml cp \
+  "proxy:${source}.crt" "$tmpdir/server.crt"
+docker compose -f compose.yaml -f compose.https.yaml cp \
+  "proxy:${source}.key" "$tmpdir/server.key"
+
+openssl x509 -in "$tmpdir/server.crt" -checkend 86400 -noout
+openssl x509 -in "$tmpdir/server.crt" \
+  -checkhost core-uade-2026.duckdns.org -noout
+openssl x509 -in "$tmpdir/server.crt" -pubkey -noout > "$tmpdir/cert.pub"
+openssl pkey -in "$tmpdir/server.key" -pubout > "$tmpdir/key.pub"
+cmp "$tmpdir/cert.pub" "$tmpdir/key.pub"
+
+install -o root -g 101 -m 644 "$tmpdir/server.crt" secrets/rabbitmq-tls/server.crt.new
+install -o root -g 101 -m 640 "$tmpdir/server.key" secrets/rabbitmq-tls/server.key.new
+mv secrets/rabbitmq-tls/server.crt.new secrets/rabbitmq-tls/server.crt
+mv secrets/rabbitmq-tls/server.key.new secrets/rabbitmq-tls/server.key
+docker compose exec -T rabbitmq rabbitmqctl eval 'ssl:clear_pem_cache().'
+
+python3 - <<'PY'
+import socket, ssl
+host = "core-uade-2026.duckdns.org"
+with socket.create_connection(("127.0.0.1", 5671), timeout=10) as connection:
+    with ssl.create_default_context().wrap_socket(
+        connection, server_hostname=host
+    ) as tls:
+        print("PASS: certificado sincronizado y TLS validado.")
+PY

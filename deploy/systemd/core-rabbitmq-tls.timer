@@ -1,0 +1,10 @@
+[Unit]
+Description=Comprobar certificado de RabbitMQ cada hora
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+Unit=core-rabbitmq-tls.service
+
+[Install]
+WantedBy=timers.target

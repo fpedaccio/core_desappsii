@@ -1,5 +1,11 @@
 # Only for a server with a real domain pointing at its IP and ports 80/443 open.
 services:
+  rabbitmq:
+    ports:
+      - "5671:5671"
+    volumes:
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./secrets/rabbitmq-tls:/etc/rabbitmq/tls:ro
   proxy:
     image: caddy:2-alpine
     environment:
