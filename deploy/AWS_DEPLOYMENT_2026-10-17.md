@@ -86,3 +86,10 @@ restauración de este nuevo respaldo automático siguen pendientes.
 Las copias locales no protegen frente a la pérdida del servidor.
 No incluyen los mensajes pendientes de RabbitMQ ni reemplazan el respaldo
 privado de configuración y claves fuera de EC2.
+
+### Resultado de restauración del respaldo automático
+Restauración manual del primer database.dump automático: PASS, en la base
+separada muni_core_auto_restore_check. Evento de prueba recuperado en estado
+ROUTED con cuatro entregas. Esto cierra la restauración del dump indicada
+como pendiente arriba; no prueba globals.sql ni recuperación en otro servidor.
+La primera ejecución diaria desatendida sigue pendiente.
