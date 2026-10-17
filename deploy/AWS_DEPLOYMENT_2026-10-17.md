@@ -93,3 +93,15 @@ separada muni_core_auto_restore_check. Evento de prueba recuperado en estado
 ROUTED con cuatro entregas. Esto cierra la restauración del dump indicada
 como pendiente arriba; no prueba globals.sql ni recuperación en otro servidor.
 La primera ejecución diaria desatendida sigue pendiente.
+
+## Mantenimiento y límites de logs
+
+Ubuntu actualizado; kernel activo verificado: 7.0.0-1014-aws.
+Después del reinicio: smoke HTTPS PASS, tres temporizadores activos,
+ninguna unidad systemd fallida y consumidores en core.inbox y q.dlq.
+
+Rotación Docker configurada por servicio: json-file, max-size 10m,
+max-file 3. Aplicada mediante recreación de contenedores, conservando
+volúmenes y realizando antes un respaldo PostgreSQL.
+Opciones verificadas mediante docker inspect; smoke posterior PASS.
+Este límite cubre stdout/stderr de Docker, no todos los archivos del servidor.

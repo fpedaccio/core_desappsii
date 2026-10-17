@@ -7,6 +7,11 @@ services:
       - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
       - ./secrets/rabbitmq-tls:/etc/rabbitmq/tls:ro
   proxy:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     image: caddy:2-alpine
     environment:
       CORE_DOMAIN: ${CORE_DOMAIN:?Set CORE_DOMAIN to your real domain}

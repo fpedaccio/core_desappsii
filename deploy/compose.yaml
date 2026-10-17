@@ -18,6 +18,11 @@ x-app: &app
 
 services:
   postgres:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     image: postgres:17-alpine
     environment:
       POSTGRES_DB: muni_core
@@ -33,6 +38,11 @@ services:
     restart: unless-stopped
 
   rabbitmq:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     image: rabbitmq:4-management-alpine
     hostname: core-rabbitmq
     environment:
@@ -49,6 +59,11 @@ services:
     restart: unless-stopped
 
   seed:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     <<: *app
     environment:
       <<: *environment
@@ -62,6 +77,11 @@ services:
         condition: service_healthy
 
   api:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     <<: *app
     depends_on:
       seed:
@@ -73,6 +93,11 @@ services:
       retries: 10
 
   worker:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     <<: *app
     command: ["python", "-m", "app.workers.inbox_worker"]
     depends_on:
@@ -80,6 +105,11 @@ services:
         condition: service_healthy
 
   frontend:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     build:
       context: ../../core-frontend
       args:
