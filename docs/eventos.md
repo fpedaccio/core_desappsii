@@ -1,3 +1,5 @@
+> **Aviso de actualización — 2026-10-17:** para el servidor desplegado, usar [integracion-aws.md](integracion-aws.md). Este documento conserva información anterior y no debe usarse como guía operativa definitiva. Las afirmaciones sobre identidad AMQP, ambientes, reintentos y respuestas deben interpretarse según la guía actual.
+
 # Cómo publicar y consumir eventos
 
 > **Para los 9 equipos.** El Core es un pasamanos: recibe tus eventos, los guarda
