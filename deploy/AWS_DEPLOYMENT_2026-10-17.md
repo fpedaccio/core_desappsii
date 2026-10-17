@@ -66,3 +66,23 @@ Let's Encrypt en Caddy; revisar si cambia el dominio o el emisor.
 
 El README de preparación describe el estado previo. Este registro añade
 la evidencia posterior de AWS y no equivale a cerrar los pendientes.
+
+## Verificaciones posteriores y respaldo automático
+
+- Reinicio completo de EC2: los servicios arrancaron automáticamente.
+- HTTPS, login y dashboard: PASS después del reinicio.
+- Worker: consumidores activos en core.inbox y q.dlq.
+- PostgreSQL: evento de prueba conservado en estado ROUTED con cuatro entregas.
+- Mensajes de prueba pendientes conservados en RabbitMQ.
+- Respaldo privado descargado a Windows y SHA-256 coincidente.
+
+Respaldo PostgreSQL mediante core-backup-postgres.timer, diariamente a
+las 06:00 UTC (03:00 Argentina). Destino: /var/backups/core, acceso root.
+Incluye database.dump y globals.sql. Se verifica que el dump pueda listarse.
+La limpieza elimina carpetas con más de siete días completos según find.
+
+Primera ejecución manual: exitosa. La ejecución diaria desatendida y la
+restauración de este nuevo respaldo automático siguen pendientes.
+Las copias locales no protegen frente a la pérdida del servidor.
+No incluyen los mensajes pendientes de RabbitMQ ni reemplazan el respaldo
+privado de configuración y claves fuera de EC2.

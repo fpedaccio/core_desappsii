@@ -1,0 +1,10 @@
+[Unit]
+Description=Respaldo diario de PostgreSQL Core
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 UTC
+Persistent=true
+Unit=core-backup-postgres.service
+
+[Install]
+WantedBy=timers.target
