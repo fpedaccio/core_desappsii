@@ -43,3 +43,23 @@ vigilar el espacio y definir una pol?tica de retenci?n antes del uso sostenido.
 4. Probar --apply en ambos componentes y comprobar la aplicaci?n.
 5. Probar y documentar recuperaci?n ante un despliegue fallido.
 6. Registrar evidencia antes de considerar cerrado el CD.
+
+## Validación de CD — 2026-10-20
+
+Frontend y backend ejecutaron despliegues con --apply mediante GitHub OIDC
+y AWS SSM. Se verificaron respaldo previo, conservación de la imagen anterior,
+readiness HTTPS, conexión AMQP y consumidores en core.inbox y q.dlq.
+
+El control inicial por declaración pasiva informó cero consumidores durante
+el despliegue. Se reemplazó ese contador por rabbitmqctl con salida JSON
+y espera limitada, manteniendo la comprobación AMQP de existencia de colas.
+La causa del resultado inicial no quedó demostrada.
+
+Backend validado: ejecución 39419758023, comando SSM
+aec13ec9-0f16-4f58-8812-4786b78ef76d.
+Frontend validado: ejecución 39418499548, comando SSM
+f0a98cdf-1719-4dca-8d9b-f124594b2392.
+
+El script instalado en /usr/local/sbin/core-deploy no se actualiza
+automáticamente al modificar su copia versionada. El rollback sigue
+siendo manual; conservar una imagen anterior no demuestra su recuperación.
