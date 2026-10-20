@@ -1,0 +1,39 @@
+# Despliegue en Render: la API, Postgres y un cron que mantiene vivo el plan
+# gratuito. RabbitMQ no esta aca porque Render no ofrece uno gestionado — va en
+# CloudAMQP y se enchufa por RABBITMQ_URL. Ver docs/deploy.md.
+
+services:
+  - type: web
+    name: muni-core
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health/live
+    plan: free
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      # Un solo contenedor hace de API y de consumidor de core.inbox.
+      - key: RUN_WORKER
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: muni-core-db
+          property: connectionString
+      # Las dos que hay que cargar a mano en el panel:
+      #   RABBITMQ_URL     amqps://... (CloudAMQP)
+      #   JWT_PRIVATE_KEY  la clave RSA; sin ella el arranque falla en produccion
+      - key: RABBITMQ_URL
+        sync: false
+      - key: JWT_PRIVATE_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+
+databases:
+  - name: muni-core-db
+    plan: free
+    databaseName: muni_core
+    user: core

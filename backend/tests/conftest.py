@@ -35,8 +35,10 @@ from app.main import create_app
 from app.messaging.fake import FakeBroker
 from app.messaging.provider import set_broker
 from app.messaging.topology import full_topology
+from app.models.catalog import Barrio, ItemDeCatalogo, Zona
 from app.models.registry import EventType, ModuleAccount, Publication, Subscription
 from app.models.users import User
+from app.seeds.territorio import BARRIOS, CATALOGOS, ZONAS
 
 MODULE_SECRET = "test-secret-de-maquina"
 """Secret de maquina de los modulos, para publicar eventos."""
@@ -144,6 +146,31 @@ async def seeded(session_factory, broker):
                 active=True,
             )
         )
+        # Catalogo territorial: lo mismo que carga el seed real, para que las
+        # pruebas usen los codigos que van a existir de verdad.
+        zonas = {}
+        for codigo, nombre, descripcion in ZONAS:
+            zona = Zona(codigo=codigo, nombre=nombre, descripcion=descripcion, activo=True)
+            session.add(zona)
+            zonas[codigo] = zona
+        await session.flush()
+
+        for codigo, nombre, zona_codigo in BARRIOS:
+            session.add(
+                Barrio(
+                    codigo=codigo, nombre=nombre, zona_id=zonas[zona_codigo].id,
+                    metadatos={}, activo=True,
+                )
+            )
+        for catalogo, items in CATALOGOS.items():
+            for codigo, nombre, descripcion, orden in items:
+                session.add(
+                    ItemDeCatalogo(
+                        catalogo=catalogo, codigo=codigo, nombre=nombre,
+                        descripcion=descripcion, orden=orden, metadatos={}, activo=True,
+                    )
+                )
+
         await session.commit()
 
     # La topologia tiene que existir para que el FakeBroker rutee.

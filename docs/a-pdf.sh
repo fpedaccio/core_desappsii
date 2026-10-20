@@ -38,6 +38,20 @@ s = re.sub(r'<summary>(.*?)</summary>\n?', r'**\1**\n\n', s)
 # `|---|` deja que el conversor elija la alineacion y termina centrando.
 s = re.sub(r'\|-{2,}(?=\|)', '|:---', s)
 
+# Las imagenes se escriben relativas al documento que las usa, pero typst las
+# resuelve contra su raiz, que es este directorio (docs/). Sin esto, una imagen
+# referida como `capturas/x.png` desde `seguridad/doc.md` se busca en
+# `docs/capturas/x.png` y la compilacion falla.
+import os
+_base = os.path.dirname(os.path.abspath(sys.argv[1]))
+def _reanclar(m):
+    ruta = m.group(2)
+    if ruta.startswith(("http://", "https://", "/")):
+        return m.group(0)
+    absoluta = os.path.normpath(os.path.join(_base, ruta))
+    return f'![{m.group(1)}]({os.path.relpath(absoluta, os.getcwd())})'
+s = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', _reanclar, s)
+
 open(sys.argv[2], "w", encoding="utf-8").write(s)
 PY
 

@@ -56,6 +56,16 @@ class Settings(BaseSettings):
 
     cors_origins: Annotated[list[str], NoDecode] = Field(default=["http://localhost:3000"])
 
+    # Con `true`, el servidor de la API tambien consume de core.inbox y q.dlq en
+    # su propio loop, en vez de necesitar `python -m app.workers.inbox_worker`
+    # aparte. Es la diferencia entre desplegar un proceso y desplegar dos, que
+    # en un plan gratuito suele ser la diferencia entre poder y no poder.
+    #
+    # El costo: los consumidores comparten el event loop con las peticiones
+    # HTTP, no se escalan por separado, y si uno se cae se cae todo. Para el
+    # volumen de este TP no se nota; para algo serio, van separados.
+    run_worker: bool = False
+
     @field_validator("cors_origins", "retry_delays", mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:

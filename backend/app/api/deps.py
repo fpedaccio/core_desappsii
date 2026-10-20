@@ -20,6 +20,11 @@ from app.core.errors import ForbiddenError, UnauthorizedError
 from app.core.security import decode_token
 from app.messaging.broker import Broker
 from app.messaging.provider import get_broker
+from app.repositories.catalog_repository import (
+    BarrioRepository,
+    ItemDeCatalogoRepository,
+    ZonaRepository,
+)
 from app.repositories.event_repository import (
     DeadLetterRepository,
     DeliveryRepository,
@@ -34,6 +39,7 @@ from app.repositories.registry_repository import (
     UserRepository,
 )
 from app.services.auth_service import AuthService
+from app.services.catalog_service import CatalogService
 from app.services.delivery_service import DeliveryService
 from app.services.event_hub_service import EventHubService
 from app.services.registry_service import RegistryService
@@ -155,6 +161,11 @@ DeliveryRepoDep = Annotated[DeliveryRepository, Depends(_repo(DeliveryRepository
 DeadLetterRepoDep = Annotated[DeadLetterRepository, Depends(_repo(DeadLetterRepository))]
 RetryAuditRepoDep = Annotated[RetryAuditRepository, Depends(_repo(RetryAuditRepository))]
 UserRepoDep = Annotated[UserRepository, Depends(_repo(UserRepository))]
+ZonaRepoDep = Annotated[ZonaRepository, Depends(_repo(ZonaRepository))]
+BarrioRepoDep = Annotated[BarrioRepository, Depends(_repo(BarrioRepository))]
+ItemDeCatalogoRepoDep = Annotated[
+    ItemDeCatalogoRepository, Depends(_repo(ItemDeCatalogoRepository))
+]
 
 
 # ----------------------------------------------------------------------
@@ -166,6 +177,15 @@ def get_auth_service(user_repo: UserRepoDep, module_repo: ModuleRepoDep) -> Auth
 
 def get_user_service(user_repo: UserRepoDep, module_repo: ModuleRepoDep) -> UserService:
     return UserService(user_repo=user_repo, module_repo=module_repo)
+
+
+def get_catalog_service(
+    zona_repo: ZonaRepoDep, barrio_repo: BarrioRepoDep, item_repo: ItemDeCatalogoRepoDep
+) -> CatalogService:
+    return CatalogService(zona_repo=zona_repo, barrio_repo=barrio_repo, item_repo=item_repo)
+
+
+CatalogServiceDep = Annotated[CatalogService, Depends(get_catalog_service)]
 
 
 def get_registry_service(

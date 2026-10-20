@@ -19,8 +19,14 @@ from app.core.config import settings
 from app.core.database import Base, SessionFactory, engine
 from app.core.logging import configure_logging
 from app.core.security import generate_opaque_token, hash_opaque_token, hash_password
+from app.models.catalog import Barrio, ItemDeCatalogo, Zona
 from app.models.registry import EventType, ModuleAccount, Publication, Subscription
 from app.models.users import User
+from app.repositories.catalog_repository import (
+    BarrioRepository,
+    ItemDeCatalogoRepository,
+    ZonaRepository,
+)
 from app.repositories.registry_repository import (
     EventTypeRepository,
     ModuleRepository,
@@ -29,6 +35,7 @@ from app.repositories.registry_repository import (
     UserRepository,
 )
 from app.seeds.board_events import DESCRIPTIONS, MISMATCHES, MODULES
+from app.seeds.territorio import BARRIOS, CATALOGOS, ZONAS
 
 logger = structlog.get_logger(__name__)
 
@@ -59,6 +66,9 @@ async def run(*, drop: bool = False) -> None:
         "event_types": 0,
         "subscriptions": 0,
         "publications": 0,
+        "zonas": 0,
+        "barrios": 0,
+        "items_de_catalogo": 0,
     }
 
     async with SessionFactory() as session:
@@ -165,6 +175,54 @@ async def run(*, drop: bool = False) -> None:
                     )
                 )
                 counts["users"] += 1
+
+        # --- catalogos globales ---------------------------------------
+        # El enunciado le asigna al Core "barrios, zonas y catalogos globales"
+        # (seccion 10, modulo 9). Es dato de arranque: la lista real se carga
+        # despues por la API, sin tocar codigo.
+        zona_repo = ZonaRepository(session)
+        barrio_repo = BarrioRepository(session)
+        item_repo = ItemDeCatalogoRepository(session)
+
+        zona_por_codigo: dict[str, Zona] = {}
+        for codigo, nombre, descripcion in ZONAS:
+            zona = await zona_repo.get_by_codigo(codigo)
+            if zona is None:
+                zona = Zona(codigo=codigo, nombre=nombre, descripcion=descripcion, activo=True)
+                zona_repo.add(zona)
+                counts["zonas"] += 1
+            zona_por_codigo[codigo] = zona
+
+        await session.flush()
+
+        for codigo, nombre, zona_codigo in BARRIOS:
+            if await barrio_repo.get_by_codigo(codigo) is None:
+                barrio_repo.add(
+                    Barrio(
+                        codigo=codigo,
+                        nombre=nombre,
+                        zona_id=zona_por_codigo[zona_codigo].id,
+                        metadatos={},
+                        activo=True,
+                    )
+                )
+                counts["barrios"] += 1
+
+        for catalogo, items in CATALOGOS.items():
+            for codigo, nombre, descripcion, orden in items:
+                if await item_repo.get_by_codigo(catalogo, codigo) is None:
+                    item_repo.add(
+                        ItemDeCatalogo(
+                            catalogo=catalogo,
+                            codigo=codigo,
+                            nombre=nombre,
+                            descripcion=descripcion,
+                            orden=orden,
+                            metadatos={},
+                            activo=True,
+                        )
+                    )
+                    counts["items_de_catalogo"] += 1
 
         await session.commit()
 

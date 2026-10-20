@@ -13,6 +13,7 @@ from typing import Any
 from pydantic import EmailStr, Field
 
 from app.api.v1.schemas.common import CamelModel
+from app.models.catalog import Barrio, ItemDeCatalogo, Zona
 from app.models.events import (
     DeadLetter,
     DeadLetterStatus,
@@ -642,3 +643,125 @@ class ReadinessResponse(CamelModel):
 
     status: str = Field(examples=["up", "degraded", "down"])
     checks: dict[str, Any]
+
+
+# ----------------------------------------------------------------------
+# Catalogos globales: barrios, zonas y listas de referencia
+# ----------------------------------------------------------------------
+class ZonaResponse(CamelModel):
+    """Una zona administrativa. `codigo` e `id` son estables y no se reusan."""
+
+    id: uuid.UUID
+    codigo: str = Field(examples=["norte"])
+    nombre: str = Field(examples=["Zona Norte"])
+    descripcion: str = ""
+    activo: bool
+    barrios: int = Field(description="Cuantos barrios tiene asignados")
+
+    @classmethod
+    def of(cls, zona: Zona) -> ZonaResponse:
+        return cls(
+            id=zona.id,
+            codigo=zona.codigo,
+            nombre=zona.nombre,
+            descripcion=zona.descripcion,
+            activo=zona.activo,
+            barrios=len(zona.barrios),
+        )
+
+
+class BarrioResponse(CamelModel):
+    """Un barrio del catalogo municipal.
+
+    `codigo` e `id` son los dos identificadores estables: **ninguno se reusa**.
+    Un barrio que deja de existir queda con `activo: false`, porque hay eventos
+    historicos que lo referencian.
+    """
+
+    id: uuid.UUID
+    codigo: str = Field(examples=["villa-elisa"])
+    nombre: str = Field(examples=["Villa Elisa"])
+    zona: str | None = Field(default=None, description="Codigo de la zona", examples=["norte"])
+    zona_nombre: str | None = None
+    metadatos: dict[str, Any] = Field(default_factory=dict)
+    activo: bool
+
+    @classmethod
+    def of(cls, barrio: Barrio) -> BarrioResponse:
+        return cls(
+            id=barrio.id,
+            codigo=barrio.codigo,
+            nombre=barrio.nombre,
+            zona=barrio.zona.codigo if barrio.zona else None,
+            zona_nombre=barrio.zona.nombre if barrio.zona else None,
+            metadatos=barrio.metadatos or {},
+            activo=barrio.activo,
+        )
+
+
+class ItemDeCatalogoResponse(CamelModel):
+    id: uuid.UUID
+    catalogo: str = Field(examples=["categorias-reclamo"])
+    codigo: str = Field(examples=["alumbrado"])
+    nombre: str = Field(examples=["Alumbrado publico"])
+    descripcion: str = ""
+    orden: int = 0
+    metadatos: dict[str, Any] = Field(default_factory=dict)
+    activo: bool
+
+    @classmethod
+    def of(cls, item: ItemDeCatalogo) -> ItemDeCatalogoResponse:
+        return cls(
+            id=item.id,
+            catalogo=item.catalogo,
+            codigo=item.codigo,
+            nombre=item.nombre,
+            descripcion=item.descripcion,
+            orden=item.orden,
+            metadatos=item.metadatos or {},
+            activo=item.activo,
+        )
+
+
+class ZonaCreate(CamelModel):
+    codigo: str = Field(min_length=1, max_length=40, examples=["norte"])
+    nombre: str = Field(min_length=1, max_length=160, examples=["Zona Norte"])
+    descripcion: str = ""
+
+
+class ZonaUpdate(CamelModel):
+    nombre: str | None = Field(default=None, min_length=1, max_length=160)
+    descripcion: str | None = None
+    activo: bool | None = None
+
+
+class BarrioCreate(CamelModel):
+    codigo: str = Field(min_length=1, max_length=40, examples=["villa-elisa"])
+    nombre: str = Field(min_length=1, max_length=160, examples=["Villa Elisa"])
+    zona: str | None = Field(default=None, examples=["norte"])
+    metadatos: dict[str, Any] = Field(default_factory=dict)
+
+
+class BarrioUpdate(CamelModel):
+    nombre: str | None = Field(default=None, min_length=1, max_length=160)
+    zona: str | None = Field(
+        default=None, description="Codigo de zona, o '' para sacarlo de la zona"
+    )
+    metadatos: dict[str, Any] | None = None
+    activo: bool | None = None
+
+
+class ItemDeCatalogoCreate(CamelModel):
+    codigo: str = Field(min_length=1, max_length=60)
+    nombre: str = Field(min_length=1, max_length=160)
+    descripcion: str = ""
+    orden: int = 0
+    metadatos: dict[str, Any] = Field(default_factory=dict)
+
+
+class ItemDeCatalogoUpdate(CamelModel):
+    nombre: str | None = Field(default=None, min_length=1, max_length=160)
+    descripcion: str | None = None
+    orden: int | None = None
+    metadatos: dict[str, Any] | None = None
+    activo: bool | None = None

@@ -5,6 +5,7 @@ completo del modulo.
 """
 
 from app.core.database import Base
+from app.models.catalog import Barrio, ItemDeCatalogo, Zona
 from app.models.events import (
     DeadLetter,
     DeadLetterStatus,
@@ -26,6 +27,7 @@ from app.models.registry import (
 from app.models.users import User
 
 __all__ = [
+    "Barrio",
     "Base",
     "DeadLetter",
     "DeadLetterStatus",
@@ -35,6 +37,7 @@ __all__ = [
     "EventStatus",
     "EventType",
     "IngestionChannel",
+    "ItemDeCatalogo",
     "ModuleAccount",
     "Publication",
     "RetryAudit",
@@ -42,4 +45,5 @@ __all__ = [
     "RetryResult",
     "Subscription",
     "User",
+    "Zona",
 ]
