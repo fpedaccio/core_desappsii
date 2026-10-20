@@ -117,14 +117,35 @@ async def main():
     try:
         channel = await connection.channel()
         for name in ("core.inbox", "q.dlq"):
-            queue = await channel.declare_queue(name, passive=True)
-            if queue.declaration_result.consumer_count < 1:
-                raise RuntimeError(f"Sin consumidor en {name}")
-        print("PASS: consumidores presentes en inbox y DLQ.")
+            await channel.declare_queue(name, passive=True)
+        print("PASS: conexión AMQP y existencia de las colas.")
     finally:
         await connection.close()
 
 asyncio.run(asyncio.wait_for(main(), timeout=30))
 WORKER_CHECK
+
+consumer_deadline=$((SECONDS + 60))
+while true; do
+  if compose exec -T rabbitmq rabbitmqctl list_queues \
+      -p core name consumers --formatter=json --timeout 10 |
+      python3 -c '
+import json
+import sys
+rows = json.load(sys.stdin)
+counts = {row["name"]: int(row["consumers"]) for row in rows}
+missing = [name for name in ("core.inbox", "q.dlq") if counts.get(name, 0) < 1]
+print("Esperando consumidores: " + ", ".join(missing) if missing
+      else "PASS: consumidores verificados por RabbitMQ.")
+sys.exit(1 if missing else 0)
+'; then
+    break
+  fi
+  if (( SECONDS >= consumer_deadline )); then
+    echo "ERROR: no se pudieron verificar los consumidores dentro del plazo." >&2
+    exit 1
+  fi
+  sleep 2
+done
 
 echo "PASS: despliegue aplicado, readiness HTTPS y consumidores verificados."
