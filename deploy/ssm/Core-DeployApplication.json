@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "2.2",
+  "description": "Comprobar o desplegar un commit de Core desde main.",
+  "parameters": {
+    "Component": {
+      "type": "String",
+      "allowedValues": [
+        "backend",
+        "frontend"
+      ],
+      "interpolationType": "ENV_VAR"
+    },
+    "Revision": {
+      "type": "String",
+      "allowedPattern": "^[0-9a-f]{40}$",
+      "interpolationType": "ENV_VAR"
+    },
+    "Mode": {
+      "type": "String",
+      "default": "--check",
+      "allowedValues": [
+        "--check",
+        "--apply"
+      ],
+      "interpolationType": "ENV_VAR"
+    }
+  },
+  "mainSteps": [
+    {
+      "action": "aws:runShellScript",
+      "name": "deployCore",
+      "precondition": {
+        "StringEquals": [
+          "platformType",
+          "Linux"
+        ]
+      },
+      "inputs": {
+        "timeoutSeconds": "3600",
+        "runCommand": [
+          "set -eu",
+          "exec /usr/local/sbin/core-deploy \"$SSM_Component\" \"$SSM_Revision\" \"$SSM_Mode\""
+        ]
+      }
+    }
+  ]
+}

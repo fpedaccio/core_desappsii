@@ -86,3 +86,39 @@ jobs:
 
       - name: Run PyTest
         run: pytest
+
+  deploy:
+    name: Backend - CD
+    needs: [build, lint, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.CORE_CD_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: core-production-deploy
+      cancel-in-progress: false
+    env:
+      CORE_COMPONENT: backend
+      CORE_CD_MODE: ${{ vars.CORE_CD_MODE || '--check' }}
+      AWS_PAGER: ""
+      AWS_MAX_ATTEMPTS: "3"
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Obtain temporary AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::026056481545:role/core-github-deploy
+          aws-region: us-east-1
+          role-duration-seconds: 3600
+          allowed-account-ids: "026056481545"
+          role-session-name: core-${{ github.run_id }}
+
+      - name: Execute and monitor SSM command
+        run: python3 .github/scripts/deploy_ssm.py

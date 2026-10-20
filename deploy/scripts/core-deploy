@@ -1,0 +1,130 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+component=${1:-}
+revision=${2:-}
+mode=${3:---check}
+
+case "$component" in
+  backend|frontend) ;;
+  *) echo "ERROR: componente inválido."; exit 1 ;;
+esac
+[[ "$revision" =~ ^[0-9a-f]{40}$ ]] || {
+  echo "ERROR: se requiere un commit completo."; exit 1;
+}
+[[ "$mode" == "--check" || "$mode" == "--apply" ]] || exit 1
+
+exec 9>/run/lock/core-deploy.lock
+flock -w 1200 9 || {
+  echo "ERROR: otro despliegue sigue ejecutándose."; exit 1;
+}
+
+root=/home/ubuntu/core-deploy
+repo="$root/core-$component"
+deploy="$root/core-backend/deploy"
+
+git_as_owner() {
+  runuser -u ubuntu -- git -C "$repo" "$@"
+}
+
+[[ -z "$(git_as_owner status --porcelain)" ]] || {
+  echo "ERROR: el repositorio tiene cambios locales."; exit 1;
+}
+
+git_as_owner fetch origin \
+  '+refs/heads/main:refs/remotes/origin/main'
+
+latest=$(git_as_owner rev-parse refs/remotes/origin/main)
+[[ "$revision" == "$latest" ]] || {
+  echo "ERROR: el commit solicitado ya no es el último de main."; exit 1;
+}
+
+previous=$(git_as_owner rev-parse HEAD)
+
+if [[ "$component" == "backend" ]]; then
+  protected=(
+    deploy/compose.yaml
+    deploy/compose.https.yaml
+    deploy/Caddyfile
+    deploy/rabbitmq.conf
+    backend/app/models
+    backend/app/core/database.py
+    backend/app/seeds
+  )
+  git_as_owner diff --quiet "$previous" "$revision" -- "${protected[@]}" || {
+    echo "ERROR: cambios de infraestructura, esquema o seed requieren revisión manual."
+    exit 1
+  }
+  git_as_owner cat-file -e "$revision:backend/Dockerfile"
+else
+  git_as_owner cat-file -e "$revision:Dockerfile"
+fi
+
+echo "Componente: $component"
+echo "Commit actual: $previous"
+echo "Commit solicitado: $revision"
+
+if [[ "$mode" == "--check" ]]; then
+  echo "PASS: comprobación previa. No se modificaron servicios ni archivos de trabajo."
+  exit 0
+fi
+
+compose() {
+  docker compose \
+    -f "$deploy/compose.yaml" \
+    -f "$deploy/compose.https.yaml" "$@"
+}
+
+# Respaldar antes de modificar la versión.
+ /usr/local/sbin/core-backup-postgres
+
+image="muni-core-$component:local"
+image_id=$(docker image inspect "$image" --format '{{.Id}}')
+rollback_tag="muni-core-$component:rollback-$(date -u +%Y%m%dT%H%M%SZ)"
+docker image tag "$image_id" "$rollback_tag"
+
+echo "Imagen anterior conservada: $rollback_tag"
+git_as_owner switch --detach "$revision"
+
+# Si falla, detenerse y conservar evidencia. No restaurar la base automáticamente.
+trap 'echo "ERROR: despliegue interrumpido. Revisar versión y servicios; imagen anterior: $rollback_tag" >&2' ERR
+
+if [[ "$component" == "backend" ]]; then
+  compose build api
+  compose up -d --no-deps --force-recreate --wait --wait-timeout 180 api
+  compose up -d --no-deps --force-recreate --wait --wait-timeout 180 \
+    worker frontend proxy
+else
+  compose build frontend
+  compose up -d --no-deps --force-recreate --wait --wait-timeout 180 \
+    frontend proxy
+fi
+
+curl --fail --silent --show-error --retry 6 --retry-delay 5 \
+  --retry-connrefused --connect-timeout 10 --max-time 20 \
+  https://core-uade-2026.duckdns.org/health/ready >/dev/null
+
+compose exec -T api python - <<'WORKER_CHECK'
+import asyncio
+import os
+import aio_pika
+
+async def main():
+    connection = await aio_pika.connect_robust(
+        os.environ["RABBITMQ_URL"], timeout=10
+    )
+    try:
+        channel = await connection.channel()
+        for name in ("core.inbox", "q.dlq"):
+            queue = await channel.declare_queue(name, passive=True)
+            if queue.declaration_result.consumer_count < 1:
+                raise RuntimeError(f"Sin consumidor en {name}")
+        print("PASS: consumidores presentes en inbox y DLQ.")
+    finally:
+        await connection.close()
+
+asyncio.run(asyncio.wait_for(main(), timeout=30))
+WORKER_CHECK
+
+echo "PASS: despliegue aplicado, readiness HTTPS y consumidores verificados."
