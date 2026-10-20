@@ -1,0 +1,8 @@
+[Unit]
+Description=Respaldo privado de PostgreSQL Core
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/core-backup-postgres

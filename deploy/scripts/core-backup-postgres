@@ -1,0 +1,28 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+
+exec 9>/run/lock/core-backup-postgres.lock
+flock -n 9 || exit 0
+
+cd /home/ubuntu/core-deploy/core-backend/deploy
+destination=/var/backups/core
+install -d -m 700 "$destination"
+temporary=$(mktemp -d "$destination/.pending-XXXXXX")
+trap 'rm -rf "$temporary"' EXIT
+
+docker compose exec -T postgres pg_dump -U core -d muni_core -Fc > "$temporary/database.dump"
+docker compose exec -T postgres pg_dumpall -U core --globals-only > "$temporary/globals.sql"
+
+test -s "$temporary/database.dump"
+test -s "$temporary/globals.sql"
+docker compose exec -T postgres pg_restore --list < "$temporary/database.dump" > /dev/null
+
+stamp=$(date -u +%Y%m%dT%H%M%S%NZ)
+mv "$temporary" "$destination/$stamp"
+trap - EXIT
+
+find "$destination" -mindepth 1 -maxdepth 1 -type d \
+  -name '20*T*Z' -mtime +7 -exec rm -rf -- {} +
+
+echo "PASS: respaldo PostgreSQL creado y listado verificado."

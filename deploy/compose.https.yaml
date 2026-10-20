@@ -1,0 +1,31 @@
+# Only for a server with a real domain pointing at its IP and ports 80/443 open.
+services:
+  rabbitmq:
+    ports:
+      - "5671:5671"
+    volumes:
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./secrets/rabbitmq-tls:/etc/rabbitmq/tls:ro
+  proxy:
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    image: caddy:2-alpine
+    environment:
+      CORE_DOMAIN: ${CORE_DOMAIN:?Set CORE_DOMAIN to your real domain}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

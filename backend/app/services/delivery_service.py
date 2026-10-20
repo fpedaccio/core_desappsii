@@ -172,6 +172,9 @@ class DeliveryService:
         delivery.next_retry_at = utcnow() + timedelta(seconds=delay)
 
         published = await self._publish_retry(delivery, body, delay=delay, attempt=attempt)
+        if published:
+            # RabbitMQ owns this retry; the scheduler must not publish it again.
+            delivery.next_retry_at = None
 
         self.retry_audit_repo.add(
             RetryAudit(

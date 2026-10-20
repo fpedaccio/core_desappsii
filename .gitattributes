@@ -1,0 +1,4 @@
+.github/** text eol=lf
+deploy/scripts/* text eol=lf
+
+*.pdf binary
