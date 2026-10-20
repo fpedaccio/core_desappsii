@@ -18,7 +18,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
-from app.api.v1 import auth, dashboard, dlq, events, registry, users
+from app.api.v1 import auth, catalogs, dashboard, dlq, events, registry, users
 from app.api.v1.schemas.dto import LivenessResponse, ReadinessResponse
 from app.core.config import settings
 from app.core.context import TRACE_HEADER, set_trace_id
@@ -176,6 +176,7 @@ def create_app() -> FastAPI:
     for router in (
         auth.router,
         users.router,
+        catalogs.router,
         events.router,
         registry.router,
         dlq.router,

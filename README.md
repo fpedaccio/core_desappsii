@@ -8,6 +8,12 @@ bien formados, guarda evidencia y los entrega a quien esté suscripto. Cada
 integrante entra al dashboard con su cuenta y ve **solo el tráfico de su
 módulo**: lo que publicó, lo que recibió y en qué estado quedó cada entrega.
 
+También administra los **catálogos globales** que el enunciado le asigna al
+módulo 9: barrios, zonas y las listas de referencia que los nueve módulos
+necesitan escribir igual. Es el único dato de negocio que el Core guarda, y
+existe porque si cada módulo mantiene su propia lista de barrios, dos eventos
+que hablan del mismo lugar llegan con identificadores distintos.
+
 **Qué no hace:** no es el proveedor de identidad de la plataforma (no sabe de
 ciudadanos ni de usuarios finales del municipio), no valida reglas de negocio de
 las áreas y no interpreta el contenido de los eventos.
@@ -193,8 +199,8 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out core.key
 
 ## Estado
 
-**Backend completo:** 45 endpoints, 9 tablas, Swagger documentado, verificado
-end-to-end. **144 tests, 91% de cobertura.**
+**Backend completo:** 56 endpoints, 12 tablas, Swagger documentado, verificado
+end-to-end. **174 tests, 91% de cobertura.**
 
 **Pendiente:** el dashboard (lo hace otra persona, con
 [docs/api-para-el-frontend.md](docs/api-para-el-frontend.md)) y la configuración
