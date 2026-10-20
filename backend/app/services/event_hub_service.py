@@ -57,6 +57,7 @@ from app.repositories.registry_repository import (
     SubscriptionRepository,
 )
 from app.services.envelope import EventEnvelope
+from app.services.retry_policy import RetryPolicy, default_retry_policy
 from app.services.validation import validate_data
 
 logger = structlog.get_logger(__name__)
@@ -98,6 +99,7 @@ class EventHubService:
         event_type_repo: EventTypeRepository,
         subscription_repo: SubscriptionRepository,
         broker: Broker,
+        retry_policy: RetryPolicy | None = None,
     ) -> None:
         self.event_log_repo = event_log_repo
         self.delivery_repo = delivery_repo
@@ -105,6 +107,8 @@ class EventHubService:
         self.event_type_repo = event_type_repo
         self.subscription_repo = subscription_repo
         self.broker = broker
+        # Inyectable para poder probar otra politica sin tocar el servicio.
+        self.retry_policy = retry_policy or default_retry_policy()
 
     # ------------------------------------------------------------------
     async def ingest(
@@ -295,7 +299,7 @@ class EventHubService:
         except Exception as exc:
             delivery.status = DeliveryStatus.RETRYING
             delivery.last_error = f"{type(exc).__name__}: {exc}"
-            delivery.next_retry_at = utcnow() + timedelta(seconds=_delay_for(1))
+            delivery.next_retry_at = utcnow() + timedelta(seconds=self.retry_policy.delay_for(1))
             logger.warning(
                 "delivery_publish_failed",
                 event_id=str(envelope.event_id),
@@ -401,10 +405,6 @@ class EventHubService:
     async def journey(self, correlation_id: uuid.UUID) -> list[EventLog]:
         return await self.event_log_repo.by_correlation(correlation_id)
 
-
-def _delay_for(attempt: int) -> int:
-    delays = settings.retry_delays or [5]
-    return delays[min(max(attempt, 1), len(delays)) - 1]
 
 
 def _elapsed_ms(started: datetime) -> int:

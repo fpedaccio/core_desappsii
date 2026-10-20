@@ -58,6 +58,7 @@ from app.services.event_hub_service import (
     REASON_SCHEMA_VIOLATION,
     EventHubService,
 )
+from app.services.retry_policy import RetryPolicy, default_retry_policy
 
 logger = structlog.get_logger(__name__)
 
@@ -93,12 +94,15 @@ class DeliveryService:
         event_log_repo: EventLogRepository,
         hub: EventHubService,
         broker: Broker,
+        retry_policy: RetryPolicy | None = None,
     ) -> None:
         self.delivery_repo = delivery_repo
         self.dead_letter_repo = dead_letter_repo
         self.retry_audit_repo = retry_audit_repo
         self.event_log_repo = event_log_repo
         self.hub = hub
+        # Inyectable para poder probar otra politica sin tocar el servicio.
+        self.retry_policy = retry_policy or default_retry_policy()
         self.broker = broker
 
     # ------------------------------------------------------------------
@@ -166,7 +170,7 @@ class DeliveryService:
         # eso el contador quedaria clavado, el backoff no escalaria nunca y el
         # mensaje giraria para siempre sin llegar a la DLQ.
         attempt = delivery.attempts
-        delay = _delay_for(attempt)
+        delay = self.retry_policy.delay_for(attempt)
         delivery.attempts += 1
         delivery.status = DeliveryStatus.RETRYING
         delivery.next_retry_at = utcnow() + timedelta(seconds=delay)
@@ -483,7 +487,9 @@ class DeliveryService:
                 if delivery.attempts_exhausted:
                     await self._exhaust(delivery, event_log, event_log.envelope, str(exc))
                 else:
-                    delivery.next_retry_at = now + timedelta(seconds=_delay_for(delivery.attempts))
+                    delivery.next_retry_at = now + timedelta(
+                        seconds=self.retry_policy.delay_for(delivery.attempts)
+                    )
                 continue
 
             delivery.status = DeliveryStatus.DELIVERED
@@ -534,10 +540,6 @@ class DeliveryService:
             logger.warning("retry_publish_failed", target=delivery.target_module, error=str(exc))
             return False
 
-
-def _delay_for(attempt: int) -> int:
-    delays = settings.retry_delays or [5]
-    return delays[min(max(attempt, 1), len(delays)) - 1]
 
 
 def _parse_uuid(value: object) -> uuid.UUID | None:

@@ -87,6 +87,7 @@ loop con las peticiones HTTP y no se escalan por separado.
 | [docs/desalineaciones.md](docs/desalineaciones.md) | **Todos.** Los 8 puntos donde los nombres de eventos no coinciden entre equipos. |
 | [docs/integracion-aws.md](docs/integracion-aws.md) | **Los otros 8 equipos.** Cómo conectarse al Core ya desplegado. |
 | [docs/deploy.md](docs/deploy.md) | **Correrlo local**, y las dos opciones que cambian cuántos procesos hacen falta. |
+| [docs/adr/](docs/adr/) | **Arquitectura.** Las cuatro decisiones de diseño, con lo que cada una costó. |
 | `GET /docs` | Swagger completo, navegable. |
 
 ---
