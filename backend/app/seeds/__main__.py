@@ -43,7 +43,7 @@ SEED_PASSWORD = os.environ.get("SEED_INITIAL_PASSWORD", "Cambiala123")
 """Contrasena de las cuentas iniciales. Es de desarrollo: hay que cambiarla."""
 
 
-async def run(*, drop: bool = False) -> None:
+async def run(*, drop: bool = False, imprimir_secrets: bool = True) -> None:
     configure_logging()
     if settings.is_production:
         if drop:
@@ -226,7 +226,17 @@ async def run(*, drop: bool = False) -> None:
 
         await session.commit()
 
-    _report(counts, secrets)
+    # Al sembrar desde el arranque del servidor, stdout son los logs de la
+    # plataforma: los secrets quedarian ahi para siempre y a la vista de
+    # cualquiera con acceso al panel. Se omiten y se obtienen rotandolos.
+    _report(counts, secrets if imprimir_secrets else {})
+    if secrets and not imprimir_secrets:
+        logger.warning(
+            "secrets_generados_no_impresos",
+            modulos=sorted(secrets),
+            hint="Obtene cada uno con POST /api/v1/modules/{nombre}/rotate-secret "
+            "y entregalo por un canal privado.",
+        )
     await engine.dispose()
 
 

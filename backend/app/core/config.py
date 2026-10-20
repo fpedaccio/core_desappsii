@@ -24,6 +24,25 @@ class Settings(BaseSettings):
     # --- Base de datos ----------------------------------------------------
     # El Core tiene su propia base. Ningun otro modulo la accede (requisito 6.3).
     database_url: str = "postgresql+asyncpg://postgres@localhost:5432/muni_core"
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def _driver_async(cls, valor: str) -> str:
+        """Completa el driver async si la URL viene sin el.
+
+        Railway, Render, Heroku y Neon entregan la URL como `postgresql://` (y
+        algunos todavia como `postgres://`). SQLAlchemy la lee como sincronica,
+        busca psycopg2 —que no esta instalado, porque el Core es async— y falla
+        con `No module named 'psycopg2'`, que no dice nada del problema real.
+
+        Copiar y pegar la URL del panel es lo primero que hace cualquiera, asi
+        que se arregla aca en vez de ponerlo como advertencia en un documento.
+        """
+        if valor.startswith("postgres://"):
+            return valor.replace("postgres://", "postgresql+asyncpg://", 1)
+        if valor.startswith("postgresql://"):
+            return valor.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return valor
     db_echo: bool = False
 
     # --- Broker -----------------------------------------------------------
@@ -65,6 +84,14 @@ class Settings(BaseSettings):
     # HTTP, no se escalan por separado, y si uno se cae se cae todo. Para el
     # volumen de este TP no se nota; para algo serio, van separados.
     run_worker: bool = False
+
+    # Con `true`, el arranque corre el seed si hace falta. Es idempotente, asi
+    # que no duplica nada ni rota secrets ya generados. Sirve para desplegar sin
+    # tener que entrar por consola a correr un comando a mano.
+    #
+    # Los secrets de maquina NO se imprimen en este modo: terminarian en los
+    # logs de la plataforma. Se obtienen con rotate-secret.
+    seed_on_startup: bool = False
 
     @field_validator("cors_origins", "retry_delays", mode="before")
     @classmethod

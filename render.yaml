@@ -18,6 +18,9 @@ services:
       # Un solo contenedor hace de API y de consumidor de core.inbox.
       - key: RUN_WORKER
         value: "true"
+      # Siembra la base en el primer arranque. Idempotente.
+      - key: SEED_ON_STARTUP
+        value: "true"
       - key: DATABASE_URL
         fromDatabase:
           name: muni-core-db

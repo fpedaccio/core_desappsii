@@ -35,19 +35,24 @@ sigue existiendo: `python -m app.workers.inbox_worker` con `RUN_WORKER=false`.
 
 ## Opción 1 — Railway (la más fácil)
 
-Todo en un proyecto, los servicios se ven entre sí por red interna, y el deploy
-sale de un push a GitHub.
+**Unos 15 minutos**, la mayoría esperando builds. Todo en un proyecto, los
+servicios se ven entre sí por red interna, y el deploy sale de un push.
+
+### Los pasos
 
 1. **New Project → Deploy from GitHub repo**, elegí este repo.
-   Railway detecta `backend/Dockerfile`.
-2. **+ New → Database → PostgreSQL.**
-3. **+ New → Template → RabbitMQ.**
-4. En el servicio del Core, pestaña **Variables**:
+2. **Settings → Root Directory: `backend`.** Este es el único paso que hay que
+   hacer a mano y el que más se olvida: el repo tiene `backend/` y `docs/`, y
+   sin esto Railway busca el Dockerfile en la raíz y no lo encuentra.
+3. **+ New → Database → PostgreSQL.**
+4. **+ New → Template → RabbitMQ.**
+5. En el servicio del Core, pestaña **Variables**:
 
 ```
 ENVIRONMENT=production
 DEBUG=false
 RUN_WORKER=true
+SEED_ON_STARTUP=true
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 RABBITMQ_URL=${{RabbitMQ.AMQP_URL}}
 JWT_PRIVATE_KEY=<la clave, ver abajo>
@@ -56,13 +61,34 @@ CORS_ORIGINS=https://<tu-front>.vercel.app
 
 Las dos `${{...}}` las resuelve Railway solo.
 
-> **Ojo con `DATABASE_URL`:** Railway la da como `postgresql://`. SQLAlchemy
-> necesita el driver async: cambiala a `postgresql+asyncpg://`.
+6. **Settings → Networking → Generate Domain.** Esa es la URL para los equipos.
 
-5. **Settings → Networking → Generate Domain.** Esa es la URL para los equipos.
+Listo. El primer arranque siembra la base solo: 9 módulos, 73 tipos de evento,
+16 barrios y los catálogos.
+
+### Dos cosas que ya no hacen falta
+
+**No hay que corregir la `DATABASE_URL`.** Railway la entrega como
+`postgresql://` y SQLAlchemy necesita `postgresql+asyncpg://`. Antes eso
+rompía el arranque con `No module named 'psycopg2'`, que no dice nada del
+problema real. Ahora el Core completa el driver solo, así que podés pegar la
+variable tal cual.
+
+**No hay que entrar por consola a correr el seed.** Con `SEED_ON_STARTUP=true`
+lo hace el arranque. Es idempotente: los redeploys no duplican nada ni rotan
+secrets ya generados.
 
 **Costo:** el plan Hobby son 5 USD/mes e incluye crédito de uso. Para tres
 servicios chicos alcanza.
+
+### Dónde se rompe
+
+| Síntoma | Causa |
+|:---|:---|
+| El build no encuentra el Dockerfile | Falta **Root Directory: `backend`** |
+| `RuntimeError: JWT_PRIVATE_KEY es obligatoria` | No cargaste la clave |
+| `/health/ready` dice `degraded` | La base está bien, el broker no: revisá `RABBITMQ_URL` |
+| El front da error de CORS | `CORS_ORIGINS` no tiene el dominio del front |
 
 ---
 
@@ -119,19 +145,33 @@ diciendo que es admin.
 
 ## Cargar los datos iniciales
 
-Una sola vez, contra la base ya desplegada:
+Lo más simple es `SEED_ON_STARTUP=true` y olvidarse. Si preferís hacerlo a mano:
 
 ```bash
 DATABASE_URL="postgresql+asyncpg://..." python -m app.seeds
 ```
 
-En Railway o Render se corre desde la consola del servicio. Carga los 9 módulos
-con su cuenta, los 73 tipos de evento, y los barrios, zonas y catálogos
-globales. Es **idempotente**: correrlo dos veces no duplica nada ni rota los
-secrets ya generados.
+Carga los 9 módulos con su cuenta, los 73 tipos de evento, y los barrios, zonas
+y catálogos globales. Es **idempotente**: correrlo dos veces no duplica nada ni
+rota los secrets ya generados.
 
-**Imprime los secrets de máquina una sola vez.** Copialos en ese momento; después
-sólo se pueden rotar.
+### Los secrets de máquina
+
+Hay una diferencia importante entre los dos modos:
+
+- **A mano**, el seed **imprime los secrets una sola vez**. Copialos ahí.
+- **Al arranque**, **no los imprime a propósito**: stdout son los logs de la
+  plataforma y quedarían ahí para siempre, a la vista de cualquiera con acceso
+  al panel. En su lugar deja un aviso diciendo qué módulos tienen secret.
+
+Para obtener el de un módulo, con la cuenta de admin:
+
+```http
+POST /api/v1/modules/{nombre}/rotate-secret
+```
+
+Devuelve uno nuevo, una sola vez. **Entregáselo al equipo por un canal privado**,
+no por el chat del grupo: ahí queda en el historial de todos para siempre.
 
 ---
 

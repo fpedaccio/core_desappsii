@@ -91,8 +91,22 @@ async def lifespan(app: FastAPI):
     configure_logging()
     logger.info("core_starting", version=VERSION, environment=settings.environment)
 
+    if settings.seed_on_startup:
+        try:
+            from app.seeds.__main__ import run as sembrar
+
+            await sembrar(imprimir_secrets=False)
+            logger.info("seed_on_startup_ok")
+        except Exception as exc:
+            # Que falle el seed no puede impedir que la API sirva: puede ser que
+            # la base todavia no acepte conexiones en el primer arranque.
+            logger.warning("seed_on_startup_failed", error=str(exc))
+
     # El broker puede no estar disponible: el Core arranca igual y sirve la API.
     # Los eventos esperan en core.inbox hasta que vuelva.
+    #
+    # Va despues del seed a proposito: la topologia se deriva de las
+    # suscripciones, y en el primer arranque esa tabla todavia no existe.
     connected = await connect_broker()
     if connected:
         broker = get_broker()
