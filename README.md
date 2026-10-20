@@ -85,7 +85,8 @@ loop con las peticiones HTTP y no se escalan por separado.
 | [docs/eventos.md](docs/eventos.md) | **Los otros 8 equipos.** Cómo publicar, consumir y suscribirse. |
 | [docs/catalogos-globales.md](docs/catalogos-globales.md) | **Los otros 8 equipos.** Barrios, zonas y listas de referencia compartidas. |
 | [docs/desalineaciones.md](docs/desalineaciones.md) | **Todos.** Los 8 puntos donde los nombres de eventos no coinciden entre equipos. |
-| [docs/deploy.md](docs/deploy.md) | **El que despliega.** Las opciones, con lo que cuesta cada una y qué se rompe. |
+| [docs/integracion-aws.md](docs/integracion-aws.md) | **Los otros 8 equipos.** Cómo conectarse al Core ya desplegado. |
+| [docs/deploy.md](docs/deploy.md) | **Correrlo local**, y las dos opciones que cambian cuántos procesos hacen falta. |
 | `GET /docs` | Swagger completo, navegable. |
 
 ---
