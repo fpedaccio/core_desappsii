@@ -451,6 +451,39 @@ Tres cosas que el script hace a propósito:
 
 ---
 
+## Anexo · Capturas de los tests
+
+La corrida completa en texto está en
+[`evidencia-tests.txt`](evidencia-tests.txt); acá van las capturas de los cuatro
+criterios que más importan y el resumen final.
+
+### Resumen de la corrida
+
+![Resumen de la corrida: 7 de 10 criterios cumplen](capturas/resumen.png)
+
+### SEC-04 · El bloqueo de cuenta funciona
+
+![Cinco intentos fallidos y la cuenta queda desactivada](capturas/SEC-04.png)
+
+Lo que prueba el bloqueo es el sexto intento, hecho **con la contraseña
+correcta**: devuelve 403 `ACCOUNT_INACTIVE`.
+
+### SEC-06 · Sin límite de tasa en el login
+
+![Cuarenta intentos seguidos, ningun 429](capturas/SEC-06.png)
+
+### SEC-08 · Un módulo reescribe el schema de otro
+
+![Rentas reescribe el schema de un evento de Obras y recibe HTTP 200](capturas/SEC-08.png)
+
+Acá el `HTTP 200` es la falla: debería haber sido un 403.
+
+### SEC-10 · Datos personales en los logs
+
+![El cuerpo crudo del mensaje malformado queda en el log](capturas/SEC-10.png)
+
+---
+
 ## Supuestos
 
 - **Grupo 9 / dominio Core.** El Core es el módulo 9 de la plataforma y figura
