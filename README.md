@@ -77,6 +77,7 @@ consumidores rechazaron), y reintenta las entregas diferidas.
 |---|---|
 | [docs/api-para-el-frontend.md](docs/api-para-el-frontend.md) | **El que hace el dashboard.** Todos los endpoints con ejemplos de respuesta y notas de UI. |
 | [docs/eventos.md](docs/eventos.md) | **Los otros 8 equipos.** Cómo publicar, consumir y suscribirse. |
+| [docs/catalogos-globales.md](docs/catalogos-globales.md) | **Los otros 8 equipos.** Barrios, zonas y listas de referencia compartidas. |
 | [docs/desalineaciones.md](docs/desalineaciones.md) | **Todos.** Los 8 puntos donde los nombres de eventos no coinciden entre equipos. |
 | `GET /docs` | Swagger completo, navegable. |
 
