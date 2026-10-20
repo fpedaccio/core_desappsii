@@ -9,6 +9,8 @@ reglas de negocio de las areas y no interpreta el significado de los eventos.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 
 import structlog
@@ -107,7 +109,28 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             logger.warning("topology_declare_failed_on_startup", error=str(exc))
 
+    # Modo de un solo proceso: la API tambien consume. Ver `run_worker` en la
+    # config para el porque y el costo.
+    retry_task = None
+    if settings.run_worker:
+        if connected:
+            from app.workers.inbox_worker import start_consumers
+
+            retry_task = await start_consumers()
+            logger.info("worker_embebido_activo")
+        else:
+            logger.warning(
+                "worker_embebido_sin_broker",
+                hint="RUN_WORKER=true pero el broker no esta disponible. La API "
+                "sirve igual; los eventos esperan en core.inbox.",
+            )
+
     yield
+
+    if retry_task is not None:
+        retry_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await retry_task
 
     await get_broker().close()
     await engine.dispose()

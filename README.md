@@ -59,15 +59,21 @@ la primera vez; para rotar uno:
 
 ### El worker
 
-El servidor de la API sirve el dashboard y la ingesta HTTP. Para consumir de
-RabbitMQ hace falta el worker aparte:
+Hay que consumir `core.inbox` (todo lo que publican los módulos) y `q.dlq` (lo
+que los consumidores rechazaron), y reintentar las entregas diferidas. Dos
+formas:
 
 ```bash
+# aparte, que es lo recomendado
 cd backend && .venv/bin/python -m app.workers.inbox_worker
+
+# o dentro de la propia API, con un solo proceso
+RUN_WORKER=true .venv/bin/uvicorn app.main:app
 ```
 
-Consume `core.inbox` (todo lo que publican los módulos) y `q.dlq` (lo que los
-consumidores rechazaron), y reintenta las entregas diferidas.
+`RUN_WORKER=true` es lo que hace posible desplegar en un plan gratuito: un
+contenedor en vez de dos. El costo es que los consumidores comparten el event
+loop con las peticiones HTTP y no se escalan por separado.
 
 ---
 
@@ -79,6 +85,7 @@ consumidores rechazaron), y reintenta las entregas diferidas.
 | [docs/eventos.md](docs/eventos.md) | **Los otros 8 equipos.** Cómo publicar, consumir y suscribirse. |
 | [docs/catalogos-globales.md](docs/catalogos-globales.md) | **Los otros 8 equipos.** Barrios, zonas y listas de referencia compartidas. |
 | [docs/desalineaciones.md](docs/desalineaciones.md) | **Todos.** Los 8 puntos donde los nombres de eventos no coinciden entre equipos. |
+| [docs/deploy.md](docs/deploy.md) | **El que despliega.** Las opciones, con lo que cuesta cada una y qué se rompe. |
 | `GET /docs` | Swagger completo, navegable. |
 
 ---

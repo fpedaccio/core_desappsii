@@ -144,6 +144,28 @@ async def _retry_loop() -> None:
             logger.warning("retry_loop_error", error=str(exc))
 
 
+async def start_consumers() -> asyncio.Task:
+    """Engancha los dos consumidores y arranca el ciclo de reintentos.
+
+    Vive aparte de `main()` porque la API tambien la usa: con `RUN_WORKER=true`
+    el servidor levanta los consumidores en su propio loop y el despliegue pasa
+    de dos procesos a uno. Da igual quien la llame, el trabajo es el mismo.
+
+    Devuelve la task del ciclo de reintentos, para poder cancelarla al cerrar.
+    """
+    broker = get_broker()
+    async with SessionFactory() as session:
+        queues = await SubscriptionRepository(session).active_queue_names()
+    await broker.declare(base_topology())
+    await broker.declare(full_topology(queues))
+
+    await broker.consume(settings.queue_inbox, _handle_inbox, prefetch=16)
+    await broker.consume(settings.queue_dlq, _handle_dlq, prefetch=8)
+    logger.info("worker_ready", inbox=settings.queue_inbox, dlq=settings.queue_dlq)
+
+    return asyncio.create_task(_retry_loop())
+
+
 async def main() -> None:
     configure_logging()
     logger.info("worker_starting")
@@ -156,24 +178,14 @@ async def main() -> None:
         )
         return
 
-    broker = get_broker()
-    async with SessionFactory() as session:
-        queues = await SubscriptionRepository(session).active_queue_names()
-    await broker.declare(base_topology())
-    await broker.declare(full_topology(queues))
-
-    await broker.consume(settings.queue_inbox, _handle_inbox, prefetch=16)
-    await broker.consume(settings.queue_dlq, _handle_dlq, prefetch=8)
-    logger.info("worker_ready", inbox=settings.queue_inbox, dlq=settings.queue_dlq)
-
-    retry_task = asyncio.create_task(_retry_loop())
+    retry_task = await start_consumers()
     try:
         await asyncio.Event().wait()
     finally:
         retry_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await retry_task
-        await broker.close()
+        await get_broker().close()
         await engine.dispose()
 
 

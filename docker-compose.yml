@@ -1,0 +1,47 @@
+# Levanta el Core completo con un comando: Postgres, RabbitMQ y la API.
+#
+#   docker compose up --build
+#
+# Sirve para desarrollo y como referencia de que necesita el deploy: las mismas
+# tres piezas, con las mismas variables.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: core
+      POSTGRES_PASSWORD: core
+      POSTGRES_DB: muni_core
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U core -d muni_core"]
+      interval: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # consola: http://localhost:15672 (guest/guest)
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      retries: 10
+
+  core:
+    build: ./backend
+    ports: ["8000:8000"]
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+asyncpg://core:core@postgres:5432/muni_core
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      # Un solo contenedor hace de API y de consumidor.
+      RUN_WORKER: "true"
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+    depends_on:
+      postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+
+volumes:
+  pgdata:
