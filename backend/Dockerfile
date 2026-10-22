@@ -6,6 +6,7 @@ COPY requirements-deploy.lock ./
 COPY app ./app
 RUN pip install --no-cache-dir -r requirements-deploy.lock && pip install --no-cache-dir --no-deps . && useradd --uid 10001 --create-home core
 COPY container_entrypoint.py /app/container_entrypoint.py
+RUN chmod -R a+rX /app/app && chmod a+r /app/container_entrypoint.py
 USER core
 EXPOSE 8000
 ENTRYPOINT ["python", "/app/container_entrypoint.py"]
