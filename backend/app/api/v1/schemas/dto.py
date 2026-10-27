@@ -570,7 +570,13 @@ class DiscardRequest(CamelModel):
 class IntegrationAlert(CamelModel):
     severity: str = Field(examples=["warning", "info"])
     kind: str = Field(
-        examples=["NO_SUBSCRIBERS", "SIMILAR_NAMES", "UNDECLARED_TYPE", "NEVER_RECEIVED"]
+        examples=[
+            "NO_SUBSCRIBERS",
+            "SIMILAR_NAMES",
+            "UNDECLARED_TYPE",
+            "NEVER_RECEIVED",
+            "NO_PRODUCER_DECLARED",
+        ]
     )
     event_type: str
     detail: str

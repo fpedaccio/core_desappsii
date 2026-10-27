@@ -87,7 +87,10 @@ async def global_dashboard(
         "- `SIMILAR_NAMES`: dos tipos con nombres casi iguales (`debtOverdue` vs "
         "`overdueDebt`, o un typo). Si son el mismo evento, hay que unificarlo.\n"
         "- `UNDECLARED_TYPE`: un tipo que se auto-registro al aparecer por el hub.\n"
-        "- `NEVER_RECEIVED`: hay suscriptores esperando un tipo que nunca llego.\n\n"
+        "- `NEVER_RECEIVED`: hay suscriptores esperando un tipo que nunca llego.\n"
+        "- `NO_PRODUCER_DECLARED`: hay suscriptores esperando un tipo que **nadie "
+        "declara publicar**. Es el que se rompe en silencio: nadie reclama un "
+        "evento que nunca vio llegar.\n\n"
         "Es lo que el pasamanos puede detectar sin conocer una sola regla de "
         "negocio: solo mirando quien manda que y quien escucha que."
     ),

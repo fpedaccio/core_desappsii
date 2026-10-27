@@ -226,6 +226,28 @@ class StatsService:
                     }
                 )
 
+            # El espejo del anterior: hay quien espera y no hay quien mande.
+            # Es el caso que se rompe en silencio -nadie reclama un evento que
+            # nunca vio llegar- y el que queda cuando un equipo corrige el
+            # nombre de su evento y el consumidor se queda en el viejo.
+            if (
+                subscribers > 0
+                and event_type.total_received == 0
+                and producer_counts.get(event_type.name, 0) == 0
+            ):
+                alerts.append(
+                    {
+                        "severity": "warning",
+                        "kind": "NO_PRODUCER_DECLARED",
+                        "eventType": event_type.name,
+                        "detail": (
+                            f"{subscribers} modulo(s) esperan '{event_type.name}' y "
+                            "ningun modulo declara publicarlo. Puede ser un nombre "
+                            "desalineado, o un productor que todavia no lo declaro."
+                        ),
+                    }
+                )
+
             # Declarado como publicado y sin ningun consumidor: el agujero se
             # ve antes de que llegue el primer evento, que es cuando conviene.
             if (

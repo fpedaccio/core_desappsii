@@ -271,6 +271,47 @@ async def test_alerta_de_nombres_parecidos_detecta_el_typo(client, auth, make_en
     assert any("ticketCreatd" in a["detail"] and "ticketCreated" in a["detail"] for a in parecidos)
 
 
+async def test_alerta_cuando_nadie_declara_publicar_lo_que_alguien_espera(client, auth):
+    """El caso de `streetClosureEnded`: obras lo consume y nadie lo publica.
+
+    Es el que se rompe en silencio. Un consumidor no reclama un evento que nunca
+    vio llegar, asi que sin esta alerta el cable cortado no se nota hasta que
+    alguien pregunta por que no le llega nada.
+    """
+    obras = await auth("obras")
+    await client.post(
+        "/api/v1/subscriptions", json={"eventType": "streetClosureEnded"}, headers=obras
+    )
+
+    admin = await auth("core")
+    alerts = (await client.get("/api/v1/dashboard/integration-alerts", headers=admin)).json()
+    huerfana = next(
+        a
+        for a in alerts
+        if a["kind"] == "NO_PRODUCER_DECLARED" and a["eventType"] == "streetClosureEnded"
+    )
+    assert huerfana["severity"] == "warning"
+
+
+async def test_declarar_el_productor_apaga_la_alerta_de_huerfana(client, auth):
+    """Deja de ser un cable cortado y pasa a ser un cable que todavia no se uso."""
+    obras = await auth("obras")
+    await client.post(
+        "/api/v1/subscriptions", json={"eventType": "streetClosureEnded"}, headers=obras
+    )
+    await client.post(
+        "/api/v1/publications",
+        json={"eventType": "streetClosureEnded"},
+        headers=await auth("atencion-ciudadana"),
+    )
+
+    admin = await auth("core")
+    alerts = (await client.get("/api/v1/dashboard/integration-alerts", headers=admin)).json()
+    de_este_tipo = {a["kind"] for a in alerts if a["eventType"] == "streetClosureEnded"}
+    assert "NO_PRODUCER_DECLARED" not in de_este_tipo
+    assert "NEVER_RECEIVED" in de_este_tipo
+
+
 async def test_las_alertas_vienen_ordenadas_por_severidad(client, auth):
     admin = await auth("core")
     alerts = (await client.get("/api/v1/dashboard/integration-alerts", headers=admin)).json()

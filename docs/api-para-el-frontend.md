@@ -249,6 +249,7 @@ detecta solo los agujeros de la integración:
 | `NO_CONSUMER_DECLARED` | warning | Alguien publica y nadie consume. Cuando se publique, no le llega a nadie. |
 | `SIMILAR_NAMES` | warning | Dos tipos casi idénticos: un typo, o el mismo evento con dos nombres. |
 | `NO_SUBSCRIBERS` | warning | Ya llegaron eventos de ese tipo y nadie estaba suscripto. |
+| `NO_PRODUCER_DECLARED` | warning | Hay suscriptores y **nadie declara publicarlo**. Es el que se rompe en silencio: nadie reclama un evento que nunca vio llegar. |
 | `UNDECLARED_TYPE` | info | Un tipo apareció por el hub sin que nadie lo declarara. |
 | `NEVER_RECEIVED` | info | Hay suscriptores y productor declarado, pero nunca llegó ninguno. |
 
