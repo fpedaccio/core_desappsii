@@ -136,18 +136,29 @@ class RegistryService:
         owner_module: str | None = None,
         description: str = "",
         json_schema: dict | None = None,
+        actor_module: str | None = None,
+        actor_is_admin: bool = False,
     ) -> EventType:
         """Declara un tipo de evento.
 
         Si ya existia (porque se auto-registro al aparecer por el hub), se le
         completan los datos y se le quita la marca de `discovered`.
+
+        Declarar no es libre: el dueño de un tipo es el unico que le puede tocar
+        el schema, y el schema decide que pasa y que se va a la DLQ para **todos**
+        los que publican ese tipo. Sin esta guarda, cualquier modulo autenticado
+        se podia adueñar de un tipo ajeno con un solo request.
         """
         if json_schema:
             assert_valid_schema(json_schema)
 
+        owner = owner_module.strip().lower() if owner_module else None
+        self._assert_owner_claim(owner, actor_module, actor_is_admin)
+
         normalized = name.strip()
         existing = await self.event_type_repo.get_by_name(normalized)
         if existing is not None:
+            self._assert_owns_event_type(existing, actor_module, actor_is_admin)
             existing.discovered = False
             if description:
                 existing.description = description
@@ -169,13 +180,24 @@ class RegistryService:
         await self.event_type_repo.flush()
         return event_type
 
-    async def set_schema(self, name: str, *, json_schema: dict | None) -> EventType:
+    async def set_schema(
+        self,
+        name: str,
+        *,
+        json_schema: dict | None,
+        actor_module: str | None = None,
+        actor_is_admin: bool = False,
+    ) -> EventType:
         """Activa o quita la validacion de estructura de un tipo.
 
         `None` desactiva la validacion: el evento vuelve a pasar sin que le miren
         el `data`.
+
+        Solo el dueño del tipo: un schema ajeno mal puesto manda a la DLQ a todos
+        los productores de ese evento sin que su equipo se entere.
         """
         event_type = await self.get_event_type(name)
+        self._assert_owns_event_type(event_type, actor_module, actor_is_admin)
         if json_schema:
             assert_valid_schema(json_schema)
         event_type.json_schema = json_schema
@@ -353,6 +375,44 @@ class RegistryService:
                 ) from exc
             return topology
         return topology
+
+    @staticmethod
+    def _assert_owner_claim(
+        owner_module: str | None, actor_module: str | None, actor_is_admin: bool
+    ) -> None:
+        """Nadie declara un tipo a nombre de otro.
+
+        El `ownerModule` del body solo sirve para confirmar el propio. Pasarle el
+        tipo a otro equipo lo hace el administrador.
+        """
+        if actor_is_admin or actor_module is None or owner_module is None:
+            return
+        if owner_module != actor_module.strip().lower():
+            raise ForbiddenError(
+                f"No podes declarar un tipo de evento a nombre de '{owner_module}': "
+                f"estas autenticado como '{actor_module}'. Para cambiarle el dueño a "
+                f"un tipo, pedilo al administrador del Core."
+            )
+
+    @staticmethod
+    def _assert_owns_event_type(
+        event_type: EventType, actor_module: str | None, actor_is_admin: bool
+    ) -> None:
+        """El dueño manda sobre el schema; el schema manda sobre todos."""
+        if actor_is_admin or actor_module is None:
+            return
+        owner = (event_type.owner_module or "").strip().lower()
+        # Sin dueño, o con el dueño que le puso el hub al ver el primer evento
+        # (`discovered`): eso es una suposicion, no un reclamo. El primer equipo
+        # que lo declara en serio se lo queda.
+        if not owner or event_type.discovered:
+            return
+        if owner != actor_module.strip().lower():
+            raise ForbiddenError(
+                f"El tipo de evento '{event_type.name}' es de '{owner}' y estas "
+                f"autenticado como '{actor_module}'. Pedile el cambio a ese equipo "
+                f"o al administrador del Core."
+            )
 
     @staticmethod
     def _assert_can_act_on(

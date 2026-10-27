@@ -176,7 +176,10 @@ async def get_event_type(name: str, caller: CallerDep, registry: RegistryDep) ->
         "`data` (pasamanos puro). Con schema se valida la estructura del payload y "
         "lo que no cumple va a la DLQ con el detalle del campo.\n\n"
         "Si el tipo ya existia porque se auto-registro al aparecer por el hub, se "
-        "le completan los datos y se le quita la marca `discovered`."
+        "le completan los datos y se le quita la marca `discovered`.\n\n"
+        "**El tipo tiene dueño.** Un modulo declara a su propio nombre: mandar "
+        "`ownerModule` de otro equipo, o redeclarar un tipo ajeno, responde 403. "
+        "Pasarle un tipo a otro equipo lo hace el administrador."
     ),
 )
 async def declare_event_type(
@@ -187,6 +190,8 @@ async def declare_event_type(
         owner_module=payload.owner_module or caller.module,
         description=payload.description,
         json_schema=payload.json_schema,
+        actor_module=caller.module,
+        actor_is_admin=caller.is_admin,
     )
     return EventTypeResponse.of(event_type)
 
@@ -197,13 +202,21 @@ async def declare_event_type(
     summary="Activar o quitar la validacion de estructura",
     description=(
         "Define el JSON Schema con el que se valida el `data` de este tipo. "
-        "Mandar `null` desactiva la validacion y el evento vuelve a pasar sin mirar."
+        "Mandar `null` desactiva la validacion y el evento vuelve a pasar sin mirar.\n\n"
+        "**Solo el dueño del tipo** (o el administrador): el schema decide que se "
+        "acepta y que se va a la DLQ para todos los que publican ese evento."
     ),
 )
 async def set_schema(
     name: str, payload: SchemaUpdate, caller: CallerDep, registry: RegistryDep
 ) -> EventTypeResponse:
-    return EventTypeResponse.of(await registry.set_schema(name, json_schema=payload.json_schema))
+    event_type = await registry.set_schema(
+        name,
+        json_schema=payload.json_schema,
+        actor_module=caller.module,
+        actor_is_admin=caller.is_admin,
+    )
+    return EventTypeResponse.of(event_type)
 
 
 # ----------------------------------------------------------------------

@@ -174,6 +174,107 @@ async def test_un_tipo_inexistente_da_404(client, auth):
 
 
 # ----------------------------------------------------------------------
+# Quien manda sobre un tipo de evento
+#
+# El dueño de un tipo es el unico que le puede poner schema, y el schema decide
+# que se acepta y que se va a la DLQ para *todos* los que publican ese evento.
+# Hasta que estas guardas existieron, cualquier modulo autenticado se adueñaba
+# de un tipo ajeno con un POST.
+# ----------------------------------------------------------------------
+async def test_un_modulo_no_puede_declarar_un_tipo_a_nombre_de_otro(client, auth):
+    obras = await auth("obras")
+    response = await client.post(
+        "/api/v1/event-types",
+        json={"name": "tipoAjeno", "ownerModule": "atencion-ciudadana"},
+        headers=obras,
+    )
+    assert response.status_code == 403
+    assert response.json()["code"] == "FORBIDDEN"
+
+
+async def test_un_modulo_no_se_puede_aduenar_de_un_tipo_ajeno(client, auth):
+    """El caso que encontramos: redeclarar el tipo de otro y quedarse con el."""
+    obras = await auth("obras")
+    declarado = await client.post(
+        "/api/v1/event-types", json={"name": "tipoDeObras"}, headers=obras
+    )
+    assert declarado.json()["ownerModule"] == "obras"
+
+    ajeno = await client.post(
+        "/api/v1/event-types",
+        json={"name": "tipoDeObras", "ownerModule": "atencion-ciudadana"},
+        headers=await auth("atencion-ciudadana"),
+    )
+    assert ajeno.status_code == 403
+
+    detalle = await client.get("/api/v1/event-types/tipoDeObras", headers=obras)
+    assert detalle.json()["ownerModule"] == "obras"
+
+
+async def test_un_modulo_no_le_puede_cambiar_el_schema_a_un_tipo_ajeno(client, auth):
+    obras = await auth("obras")
+    await client.post("/api/v1/event-types", json={"name": "tipoDeObras"}, headers=obras)
+
+    response = await client.put(
+        "/api/v1/event-types/tipoDeObras/schema",
+        json={"jsonSchema": {"type": "object", "required": ["loQueYoQuiera"]}},
+        headers=await auth("atencion-ciudadana"),
+    )
+    assert response.status_code == 403
+    assert (await client.get("/api/v1/event-types/tipoDeObras", headers=obras)).json()[
+        "jsonSchema"
+    ] is None
+
+
+async def test_el_dueno_le_pone_schema_a_su_propio_tipo(client, auth):
+    obras = await auth("obras")
+    await client.post("/api/v1/event-types", json={"name": "tipoDeObras"}, headers=obras)
+
+    response = await client.put(
+        "/api/v1/event-types/tipoDeObras/schema",
+        json={"jsonSchema": {"type": "object", "required": ["obraId"]}},
+        headers=obras,
+    )
+    assert response.status_code == 200
+
+
+async def test_el_admin_le_puede_pasar_un_tipo_a_otro_equipo(client, auth):
+    """La via legitima para mover un ownerModule."""
+    obras = await auth("obras")
+    await client.post("/api/v1/event-types", json={"name": "tipoDeObras"}, headers=obras)
+
+    response = await client.post(
+        "/api/v1/event-types",
+        json={"name": "tipoDeObras", "ownerModule": "atencion-ciudadana"},
+        headers=await auth("core"),
+    )
+    assert response.status_code == 201
+    assert response.json()["ownerModule"] == "atencion-ciudadana"
+
+
+async def test_un_tipo_descubierto_lo_puede_reclamar_su_dueno_real(client, auth, make_envelope):
+    """El dueño de un `discovered` lo puso el hub al ver el primer evento.
+
+    Es una suposicion -el primero que lo publico- y no un reclamo, asi que no
+    deja afuera al equipo que si es el dueño.
+    """
+    obras = await auth("obras")
+    await client.post(
+        "/api/v1/events",
+        json=make_envelope(eventType="apareciSolo", sourceModule="obras"),
+        headers=obras,
+    )
+
+    response = await client.post(
+        "/api/v1/event-types",
+        json={"name": "apareciSolo", "description": "Es nuestro."},
+        headers=await auth("atencion-ciudadana"),
+    )
+    assert response.status_code == 201
+    assert response.json()["ownerModule"] == "atencion-ciudadana"
+
+
+# ----------------------------------------------------------------------
 # Publicaciones
 # ----------------------------------------------------------------------
 async def test_declarar_una_publicacion(client, auth):
