@@ -189,8 +189,15 @@ evento.
 | Error permanente (el payload no les sirve) | `nack(requeue=false)` |
 
 **Nunca `requeue=true`.** La cadena de reintentos la maneja el Core:
-15s → 1m → 5m → 15m, y después el mensaje queda en la DLQ donde un operador lo ve
-y puede reintentarlo a mano. Si ustedes reencolan, el mensaje gira en su cola sin
+**5 s → 30 s → 2 min**, y después el mensaje queda en la DLQ donde un operador lo
+ve y puede reintentarlo a mano.
+
+> **Corregido el 2026-10-27.** Antes decía `15s → 1m → 5m → 15m`: era un `.env`
+> local de demo, no lo desplegado. La cadena configurada tiene un cuarto escalón
+> de 10 min, pero con el `maxAttempts` por default (4, que cuenta **entregas**)
+> no se llega a usar. Los escalones reales están en `GET /api/v1/topology`, con
+> el `x-message-ttl` de cada cola de espera; si no coinciden con esto, gana el
+> endpoint. Si ustedes reencolan, el mensaje gira en su cola sin
 backoff y sin quedar auditado.
 
 ### Una aclaración importante

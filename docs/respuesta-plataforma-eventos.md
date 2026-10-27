@@ -73,7 +73,7 @@ publishers ──► muni.inbox ──► core.inbox
                  q.obras                    q.rentas
                     │ el consumidor hace nack
                     ▼
-        muni.retry.15s → 1m → 5m → 15m ──(TTL)──► vuelve a muni.events
+        muni.retry.5s → 30s → 2m → 10m ──(TTL)──► vuelve a muni.events
                     │ agotados los intentos
                     ▼
               muni.dlx ──► q.dlq
@@ -225,11 +225,25 @@ reencolan, el mensaje gira en su cola sin backoff y sin quedar auditado.
 
 ### Reintentos
 
+> **Corregido el 2026-10-27.** Antes decía `15 s → 1 m → 5 m → 15 m`. Era un
+> `.env` local de demo, no lo desplegado. Perdón por el dato equivocado.
+>
+> **No copien estos números a un documento propio.** Consúltenlos en
+> `GET /api/v1/topology`, que devuelve cada cola de espera con su
+> `x-message-ttl`. Si no coincide con esto, gana el endpoint.
+
+La cadena de esperas configurada es:
+
 ```
-15 s → 1 m → 5 m → 15 m → Dead Letter Queue
+5 s → 30 s → 2 min → 10 min → Dead Letter Queue
 ```
 
 Configurable por suscripción con `maxAttempts` (1 a 10, default 4).
+
+**Ojo con qué cuenta `maxAttempts`: entregas, no reintentos.** Con el default de
+4 son la entrega original más 3 reintentos, y el cuarto `nack` agota. O sea que
+**el escalón de 10 min no se usa** y la ventana real es de **2 min 35 s**. Para
+que entre el cuarto escalón hace falta `maxAttempts = 5` (12 min 35 s).
 
 El mecanismo: el Core publica el mensaje en la cola de espera del escalón, que
 tiene un `x-message-ttl` y su `x-dead-letter-exchange` apunta de vuelta a
@@ -408,7 +422,7 @@ un cuatrimestre, variables de entorno más rotación por API alcanza.
 | 5 | CloudEvents | ✅ No nativo, con mapeo 1:1 documentado |
 | 6 | Autenticación | ✅ Token de módulo, 15 min |
 | 7 | Claims JWT | ✅ RS256, solo valida el Core |
-| 8 | Reintentos y ack | ✅ 15s → 1m → 5m → 15m |
+| 8 | Reintentos y ack | ✅ 5s → 30s → 2m (con `maxAttempts` default) |
 | 9 | DLQ | ✅ Con reintento y descarte auditados |
 | 10 | Idempotencia | ✅ Del lado del Core; hace falta también del suyo |
 | 11 | Versionado | ✅ `eventVersion` + reglas de compatibilidad |

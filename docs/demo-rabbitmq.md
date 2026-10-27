@@ -16,6 +16,13 @@ muestra los contadores moviéndose.
 > configurado en **15 segundos** (`RETRY_DELAYS` en `backend/.env`): con 5s el
 > mensaje entraba y salía de la cola de espera entre dos refrescos y no se
 > llegaba a ver.
+>
+> ⚠️ **Ese `RETRY_DELAYS=15,60,300,900` es solo de esta demo local.** No está en
+> `deploy/compose.yaml` y el `.dockerignore` deja el `.env` afuera de la imagen,
+> así que **el servidor no lo usa**: ahí corre el default del código,
+> `5, 30, 120, 600`. No cites los números de esta página como si fueran los de
+> producción — ya nos pasó, y les pasamos el dato equivocado a cuatro equipos.
+> Lo desplegado se consulta en `GET /api/v1/topology`.
 
 ```bash
 cd backend && .venv/bin/python demo_rabbitmq.py

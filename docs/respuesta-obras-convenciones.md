@@ -209,11 +209,24 @@ También pueden publicar por HTTP con `POST /api/v1/events`, mismo pipeline.
 
 ### Reintentos
 
-Si su consumidor hace `nack(requeue=false)`, el Core reintenta con backoff:
+> **Corregido el 2026-10-27.** Una version anterior decia
+> `15 s → 1 m → 5 m → 15 m`. Era un `.env` local de demo, no lo desplegado.
+
+> **De donde sale este dato.** Los escalones salen de `GET /api/v1/topology`,
+> que devuelve cada cola de espera con su `x-message-ttl`. Si lo que leen aca
+> no coincide con ese endpoint, **gana el endpoint** y avisennos.
+
+Si su consumidor hace `nack(requeue=false)`, el Core reintenta con backoff. La
+cadena configurada es **5 s, 30 s, 2 min, 10 min**, pero cuantos escalones se
+usan depende del `maxAttempts` de la suscripcion, que cuenta **entregas, no
+reintentos**. Con el default de 4:
 
 ```
-15 s → 1 m → 5 m → 15 m → Dead Letter Queue
+entrega ──nack──► 5 s ──nack──► 30 s ──nack──► 2 min ──nack──► Dead Letter Queue
 ```
+
+O sea **3 reintentos en una ventana de 2 min 35 s**. El escalon de 10 min solo
+entra con `maxAttempts = 5` o mas.
 
 **Nunca usen `requeue=true`.** La cadena la gobierna el Core; si reencolan, el
 mensaje gira en su cola sin backoff y sin quedar auditado.

@@ -140,18 +140,32 @@ Cuando un consumidor hace `nack`, el Core no descarta el evento. Lo manda al
 escalón de backoff que corresponda y el broker se lo vuelve a entregar cuando
 vence el TTL. O sea: **nack = "todavía no puedo con esto, traémelo más tarde".**
 
+> **Corregido el 2026-10-27.** La version original de esta respuesta decia
+> `15 s / 1 m / 5 m / 15 m` y una ventana de ~21 minutos. Estaba mal: ese era el
+> valor de un `.env` local que usamos para la demo, no el desplegado. Los
+> numeros de abajo son los correctos, y son **un orden de magnitud menores**.
+>
+> Los escalones reales se consultan en `GET /api/v1/topology`, que devuelve cada
+> cola de espera con su `x-message-ttl`. Si no coincide con esto, gana el
+> endpoint.
+
 ```
-nack #1 ──► vuelve en  15 s
-nack #2 ──► vuelve en   1 min
-nack #3 ──► vuelve en   5 min
-nack #4 ──► vuelve en  15 min
-nack #5 ──► dead letter, visible en GET /api/v1/dlq
+nack #1 ──► vuelve en   5 s
+nack #2 ──► vuelve en  30 s
+nack #3 ──► vuelve en   2 min
+nack #4 ──► dead letter, visible en GET /api/v1/dlq
 ```
 
+`maxAttempts` cuenta **entregas, no reintentos**: con el default de 4 son la
+entrega original mas 3 reintentos, y el cuarto nack agota. Por eso el cuarto
+escalon de la cadena (10 min) no llega a usarse; haria falta `maxAttempts = 5`.
+
 **Lo que recomendamos a M2 para este caso:** si llega `PROGRESS` y no está el
-`STARTED`, hacer `nack`. Tienen **cuatro reintentos repartidos en ~21 minutos**
-para que llegue el que falta. Es mucho más que el desfasaje que puede tener un
-par de mensajes en vuelo.
+`STARTED`, hacer `nack`. Tienen **tres reintentos repartidos en 2 min 35 s** para
+que llegue el que falta. Alcanza para el desfasaje normal de un par de mensajes
+en vuelo, pero **no** para un consumidor que estuvo caido un rato. Si necesitan
+una ventana mas larga, se sube el `maxAttempts` de esa suscripcion: con 5 pasa a
+12 min 35 s.
 
 Dos límites que conviene que sepan:
 
@@ -276,4 +290,4 @@ Conviene avisar en el grupo general antes de empezar, y no al revés.
 | 1 | Que Ciudadanos cree su suscripción si la necesita | Ciudadanos |
 | 6 | Activar validación de `format`, con fecha anunciada | acuerdo de los 9 |
 | 4 | Retención 90 días del sobre, indefinida del `eventId`; versión = tipo nuevo | acuerdo del equipo |
-| 5 | Usar `nack` como posposición: 4 intentos en ~21 min | nada, ya funciona |
+| 5 | Usar `nack` como posposición: 3 reintentos en 2 min 35 s | nada, ya funciona |

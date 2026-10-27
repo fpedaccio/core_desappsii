@@ -67,28 +67,35 @@ declaran en modo pasivo, que es exactamente lo correcto.
 
 ---
 
-## 3 · `maxAttempts` y la cadena 15 s → 1 m → 5 m → 15 m
+## 3 · `maxAttempts` y la cadena de esperas
 
-**No son lo mismo, y se pueden desalinear.** Son dos cosas separadas:
+> **Corregido el 2026-10-27.** Una version anterior de este documento decia
+> `15 s → 1 m → 5 m → 15 m`. Era el valor de un `.env` local que usamos para la
+> demo, no el desplegado. Perdon por el dato equivocado.
 
-- **La cadena de esperas** es global del Core: `RETRY_DELAYS=15,60,300,900`.
-- **`maxAttempts`** es por suscripción. El de ustedes está en **4**.
+> **De donde sale este dato.** Los escalones no se escriben a mano en ningun
+> documento: salen de `GET /api/v1/topology`, que devuelve cada cola de espera
+> con su `x-message-ttl`. Si lo que leen aca no coincide con lo que les
+> devuelve ese endpoint, **gana el endpoint** y avisennos.
 
-La espera del intento *n* se toma de la posición *n* de la cadena, y **si se
-pasa, se queda en la última**:
+**`maxAttempts` y la cadena no son lo mismo**, y se pueden desalinear:
 
-```python
-def _delay_for(attempt: int) -> int:
-    delays = settings.retry_delays or [5]
-    return delays[min(max(attempt, 1), len(delays)) - 1]
-```
+- **La cadena de esperas** es global del Core: **5 s, 30 s, 2 min, 10 min**.
+- **`maxAttempts`** es por suscripcion. El de ustedes esta en **4**.
 
-Entonces, respondiendo lo que preguntan:
+La espera del intento *n* se toma de la posicion *n* de la cadena, y si se pasa,
+se queda en la ultima.
 
-- `maxAttempts = 4` → 15 s, 1 m, 5 m, 15 m. Coincide con la cadena. Es su caso.
-- `maxAttempts = 6` → 15 s, 1 m, 5 m, 15 m, **15 m, 15 m**. No falla, repite el
-  último escalón.
-- `maxAttempts = 2` → 15 s, 1 m, y a la DLQ. Se usan los dos primeros nomás.
+**El detalle que importa:** `maxAttempts` cuenta **entregas, no reintentos**. Con
+4, la entrega original mas 3 reintentos, y la cuarta que falla agota. O sea que
+**el escalon de 10 minutos no se usa**:
+
+- `maxAttempts = 4` → esperas de 5 s, 30 s y 2 min. **Ventana real: 2 min 35 s.**
+  Es su caso, y es bastante menos de lo que sugiere la cadena.
+- `maxAttempts = 5` → 5 s, 30 s, 2 min, 10 min. Ventana 12 min 35 s. Es el minimo
+  para que se use la cadena entera.
+- `maxAttempts = 2` → 5 s y a la DLQ. Se usa el primer escalon nomas.
+- `maxAttempts = 7` → ..., 10 min, **10 min, 10 min**. No falla, repite el ultimo.
 
 Agotados los intentos, la entrega queda `DEAD` y aparece en `GET /api/v1/dlq`.
 
