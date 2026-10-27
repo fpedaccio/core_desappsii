@@ -163,11 +163,17 @@ class StatsService:
         event_types = await self.event_type_repo.list_ordered()
         subscriber_counts = await self.subscription_repo.counts_by_event_type()
 
-        producer_counts: dict[str, int] = {}
+        producers_by_type: dict[str, list[str]] = {}
         for publication in await self.publication_repo.list_all():
             if publication.active:
                 name = publication.event_type.name
-                producer_counts[name] = producer_counts.get(name, 0) + 1
+                producers_by_type.setdefault(name, []).append(publication.module.name)
+        producer_counts = {name: len(mods) for name, mods in producers_by_type.items()}
+
+        consumers_by_type: dict[str, list[str]] = {}
+        for sub in await self.subscription_repo.list_all():
+            if sub.active:
+                consumers_by_type.setdefault(sub.event_type.name, []).append(sub.module.name)
 
         for event_type in event_types:
             subscribers = subscriber_counts.get(event_type.name, 0)
@@ -270,7 +276,11 @@ class StatsService:
                 )
 
         # Nombres sospechosamente parecidos: el sintoma tipico de un typo.
-        alerts.extend(_similar_name_alerts([et.name for et in event_types]))
+        alerts.extend(
+            _similar_name_alerts(
+                [et.name for et in event_types], producers_by_type, consumers_by_type
+            )
+        )
 
         # Primero lo que hay que accionar.
         order = {"warning": 0, "info": 1}
@@ -317,12 +327,28 @@ class StatsService:
             return False
 
 
-def _similar_name_alerts(names: list[str]) -> list[dict[str, Any]]:
+def _lado(nombre: str, publica: list[str], consume: list[str]) -> str:
+    """Resume un lado del par: `nombre (publica: X · consume: Y)`."""
+    pub = ", ".join(publica) if publica else "nadie"
+    con = ", ".join(consume) if consume else "nadie"
+    return f"'{nombre}' (publica: {pub} · consume: {con})"
+
+
+def _similar_name_alerts(
+    names: list[str],
+    producers_by_type: dict[str, list[str]],
+    consumers_by_type: dict[str, list[str]],
+) -> list[dict[str, Any]]:
     """Detecta pares de nombres casi iguales.
 
     Con 9 equipos nombrando eventos por su cuenta, los typos y las variantes
     (`debtOverdue` vs `overdueDebt`, `streetClosureEnded` vs `streetClousureEnded`)
     son la falla de integracion mas comun y la mas dificil de ver a ojo.
+
+    No alcanza con decir "estos dos se parecen": para accionarlo hay que saber
+    quien publica y quien consume cada lado. Sin eso, el equipo tiene que salir
+    a cruzar el mapa a mano. Por eso cada alerta viaja con las dos puntas y, si
+    el dato alcanza, con cual nombre conviene quedarse.
     """
     alerts: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -331,20 +357,44 @@ def _similar_name_alerts(names: list[str]) -> list[dict[str, Any]]:
         for right in names[index + 1 :]:
             if (left, right) in seen:
                 continue
-            if _is_near_duplicate(left, right):
-                seen.add((left, right))
-                alerts.append(
-                    {
-                        "severity": "warning",
-                        "kind": "SIMILAR_NAMES",
-                        "eventType": left,
-                        "detail": (
-                            f"'{left}' y '{right}' son sospechosamente parecidos. "
-                            "Si son el mismo evento, los equipos tienen que ponerse "
-                            "de acuerdo en un solo nombre."
-                        ),
-                    }
+            if not _is_near_duplicate(left, right):
+                continue
+            seen.add((left, right))
+
+            pub_left = sorted(producers_by_type.get(left, []))
+            con_left = sorted(consumers_by_type.get(left, []))
+            pub_right = sorted(producers_by_type.get(right, []))
+            con_right = sorted(consumers_by_type.get(right, []))
+
+            detail = (
+                f"Nombres sospechosamente parecidos. {_lado(left, pub_left, con_left)} "
+                f"y {_lado(right, pub_right, con_right)}. Si son el mismo evento, el "
+                "que publica con un nombre no le llega al que consume con el otro."
+            )
+            # Una recomendacion solo cuando el dato la sostiene: el nombre que
+            # nadie usa todavia se puede abandonar sin romper nada.
+            left_vacio = not pub_left and not con_left
+            right_vacio = not pub_right and not con_right
+            if left_vacio != right_vacio:
+                sobra, queda = (left, right) if left_vacio else (right, left)
+                detail += (
+                    f" Sugerencia: '{sobra}' no lo usa nadie, asi que conviene "
+                    f"unificar en '{queda}'."
                 )
+
+            alerts.append(
+                {
+                    "severity": "warning",
+                    "kind": "SIMILAR_NAMES",
+                    "eventType": left,
+                    "detail": detail,
+                    "counterpart": right,
+                    "publishedBy": pub_left,
+                    "consumedBy": con_left,
+                    "counterpartPublishedBy": pub_right,
+                    "counterpartConsumedBy": con_right,
+                }
+            )
     return alerts
 
 

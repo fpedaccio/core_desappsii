@@ -580,6 +580,13 @@ class IntegrationAlert(CamelModel):
     )
     event_type: str
     detail: str
+    # Solo en SIMILAR_NAMES: el otro nombre del par y las dos puntas de cada
+    # lado, para que el panel arme el plan sin leer el `detail` con un regex.
+    counterpart: str | None = None
+    published_by: list[str] = Field(default_factory=list)
+    consumed_by: list[str] = Field(default_factory=list)
+    counterpart_published_by: list[str] = Field(default_factory=list)
+    counterpart_consumed_by: list[str] = Field(default_factory=list)
 
 
 class ModuleDashboardResponse(CamelModel):

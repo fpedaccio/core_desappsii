@@ -271,6 +271,44 @@ async def test_alerta_de_nombres_parecidos_detecta_el_typo(client, auth, make_en
     assert any("ticketCreatd" in a["detail"] and "ticketCreated" in a["detail"] for a in parecidos)
 
 
+async def test_la_alerta_de_nombres_parecidos_dice_quien_publica_y_consume(client, auth):
+    """Un typo no se arregla sabiendo que existe, sino sabiendo a quien escribirle.
+
+    La alerta tiene que traer las dos puntas de cada lado, para que el equipo no
+    tenga que salir a cruzar el mapa a mano.
+    """
+    # obras consume el nombre bien escrito; atencion-ciudadana publica el typo.
+    await client.post(
+        "/api/v1/subscriptions",
+        json={"eventType": "streetClosureEnded"},
+        headers=await auth("obras"),
+    )
+    await client.post(
+        "/api/v1/publications",
+        json={"eventType": "streetClousureEnded"},
+        headers=await auth("atencion-ciudadana"),
+    )
+
+    alerts = (
+        await client.get("/api/v1/dashboard/integration-alerts", headers=await auth("core"))
+    ).json()
+    par = next(
+        a
+        for a in alerts
+        if a["kind"] == "SIMILAR_NAMES"
+        and {a["eventType"], a["counterpart"]} == {"streetClosureEnded", "streetClousureEnded"}
+    )
+    lados = {
+        a: (set(p), set(c))
+        for a, p, c in [
+            (par["eventType"], par["publishedBy"], par["consumedBy"]),
+            (par["counterpart"], par["counterpartPublishedBy"], par["counterpartConsumedBy"]),
+        ]
+    }
+    assert lados["streetClosureEnded"] == (set(), {"obras"})
+    assert lados["streetClousureEnded"] == ({"atencion-ciudadana"}, set())
+
+
 async def test_alerta_cuando_nadie_declara_publicar_lo_que_alguien_espera(client, auth):
     """El caso de `streetClosureEnded`: obras lo consume y nadie lo publica.
 
