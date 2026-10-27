@@ -521,6 +521,11 @@ class DeliveryService:
         El mensaje conserva como routing key la cola destino, asi que cuando el
         TTL de la cola de espera vence, vuelve solo a esa cola.
         """
+        # El eventId tiene que viajar igual que en la primera entrega: como header
+        # x-core-event-id y como message_id de AMQP, no solo adentro del cuerpo.
+        # Si no, un consumidor que correlaciona por el header pierde el evento en
+        # cada reintento, cuando es justo cuando mas lo necesita.
+        event_id = str(body.get("eventId") or "")
         try:
             await self.broker.publish(
                 OutboundMessage(
@@ -528,11 +533,13 @@ class DeliveryService:
                     routing_key=delivery.queue_name,
                     body=body,
                     headers={
+                        HEADER_EVENT_ID: event_id,
                         HEADER_TARGET: delivery.target_module,
                         HEADER_ATTEMPT: attempt + 1,
                         HEADER_TRACE_ID: get_trace_id(),
                         HEADER_ERROR: (delivery.last_error or "")[:500],
                     },
+                    message_id=event_id or None,
                 )
             )
             return True

@@ -109,6 +109,25 @@ async def test_un_rechazo_programa_el_primer_escalon_de_backoff(services):
     ]
 
 
+async def test_el_reintento_automatico_conserva_el_event_id(services):
+    """En los reintentos el eventId tiene que viajar como header x-core-event-id
+    y como message_id, igual que en la primera entrega. Si solo queda adentro del
+    cuerpo, un consumidor que correlaciona por el header lo pierde justo cuando el
+    evento esta reintentandose, que es cuando mas importa."""
+    envelope = _envelope()
+    await services["hub"].ingest(envelope)
+    await services["session"].flush()
+    services["broker"].reset()
+
+    await services["delivery"].handle_dlq_message(_rejection(envelope, attempt=1))
+
+    reintento = retry_exchange_for(settings.retry_delays[0])
+    publicados = [m for m in services["broker"].published if m.exchange == reintento]
+    assert len(publicados) == 1
+    assert publicados[0].headers[HEADER_EVENT_ID] == str(envelope.event_id)
+    assert publicados[0].message_id == str(envelope.event_id)
+
+
 async def test_cada_rechazo_sube_de_escalon(services):
     envelope = _envelope()
     await services["hub"].ingest(envelope)
