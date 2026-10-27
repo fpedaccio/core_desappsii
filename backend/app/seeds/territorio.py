@@ -1,42 +1,88 @@
 """Catalogo territorial inicial: zonas y barrios, mas los catalogos globales.
 
-Es **dato de arranque, no el padron real**. El municipio del TP es ficticio, asi
-que esto da una base coherente para que los nueve modulos puedan integrar hoy
-usando los mismos identificadores. Cuando la catedra o el equipo definan la
-lista de verdad, se reemplaza con `POST /api/v1/catalogos/barrios` sin tocar
-codigo.
+**Barrios y comunas reales de la Ciudad Autonoma de Buenos Aires** (Ley 2650):
+48 barrios agrupados en 15 comunas. Las `zonas` del catalogo son las comunas;
+el `codigo` de cada barrio es el slug estable que viaja en el `data` de los
+eventos, asi que no cambia aunque cambie el nombre mostrado.
 
-Los `codigo` son slugs estables: son lo que viaja en el `data` de los eventos.
+Los nombres con acento o eñe van sin acentos en el `codigo` (es la regla de
+slug: minusculas, numeros y guiones), pero el `nombre` mostrado los conserva:
+`nunez` -> "Nuñez", `velez-sarsfield` -> "Velez Sarsfield".
 """
 
 from __future__ import annotations
 
+# Las "zonas" del catalogo son las 15 comunas de CABA. La descripcion es una
+# referencia corta; los barrios que agrupa cada comuna estan en BARRIOS.
+_C = "Comuna de la Ciudad Autonoma de Buenos Aires"
 ZONAS: list[tuple[str, str, str]] = [
-    ("centro", "Centro", "Casco historico y area administrativa"),
-    ("norte", "Zona Norte", "Barrios residenciales del norte"),
-    ("sur", "Zona Sur", "Area industrial y residencial del sur"),
-    ("oeste", "Zona Oeste", "Barrios del oeste y periferia"),
-    ("ribera", "Ribera", "Barrios costeros y area portuaria"),
+    ("comuna-1", "Comuna 1", _C),
+    ("comuna-2", "Comuna 2", _C),
+    ("comuna-3", "Comuna 3", _C),
+    ("comuna-4", "Comuna 4", _C),
+    ("comuna-5", "Comuna 5", _C),
+    ("comuna-6", "Comuna 6", _C),
+    ("comuna-7", "Comuna 7", _C),
+    ("comuna-8", "Comuna 8", _C),
+    ("comuna-9", "Comuna 9", _C),
+    ("comuna-10", "Comuna 10", _C),
+    ("comuna-11", "Comuna 11", _C),
+    ("comuna-12", "Comuna 12", _C),
+    ("comuna-13", "Comuna 13", _C),
+    ("comuna-14", "Comuna 14", _C),
+    ("comuna-15", "Comuna 15", _C),
 ]
 
-# (codigo, nombre, zona)
+# (codigo, nombre, comuna). Los 48 barrios oficiales de CABA.
 BARRIOS: list[tuple[str, str, str]] = [
-    ("plaza-mayor", "Plaza Mayor", "centro"),
-    ("tribunales", "Tribunales", "centro"),
-    ("mercado-viejo", "Mercado Viejo", "centro"),
-    ("villa-elisa", "Villa Elisa", "norte"),
-    ("los-aromos", "Los Aromos", "norte"),
-    ("alto-verde", "Alto Verde", "norte"),
-    ("san-cayetano", "San Cayetano", "norte"),
-    ("parque-industrial", "Parque Industrial", "sur"),
-    ("barrio-obrero", "Barrio Obrero", "sur"),
-    ("las-quintas", "Las Quintas", "sur"),
-    ("santa-rita", "Santa Rita", "oeste"),
-    ("el-molino", "El Molino", "oeste"),
-    ("loma-linda", "Loma Linda", "oeste"),
-    ("puerto-viejo", "Puerto Viejo", "ribera"),
-    ("costanera", "Costanera", "ribera"),
-    ("isla-verde", "Isla Verde", "ribera"),
+    ("retiro", "Retiro", "comuna-1"),
+    ("san-nicolas", "San Nicolas", "comuna-1"),
+    ("puerto-madero", "Puerto Madero", "comuna-1"),
+    ("san-telmo", "San Telmo", "comuna-1"),
+    ("montserrat", "Montserrat", "comuna-1"),
+    ("constitucion", "Constitucion", "comuna-1"),
+    ("recoleta", "Recoleta", "comuna-2"),
+    ("balvanera", "Balvanera", "comuna-3"),
+    ("san-cristobal", "San Cristobal", "comuna-3"),
+    ("la-boca", "La Boca", "comuna-4"),
+    ("barracas", "Barracas", "comuna-4"),
+    ("parque-patricios", "Parque Patricios", "comuna-4"),
+    ("nueva-pompeya", "Nueva Pompeya", "comuna-4"),
+    ("almagro", "Almagro", "comuna-5"),
+    ("boedo", "Boedo", "comuna-5"),
+    ("caballito", "Caballito", "comuna-6"),
+    ("flores", "Flores", "comuna-7"),
+    ("parque-chacabuco", "Parque Chacabuco", "comuna-7"),
+    ("villa-soldati", "Villa Soldati", "comuna-8"),
+    ("villa-riachuelo", "Villa Riachuelo", "comuna-8"),
+    ("villa-lugano", "Villa Lugano", "comuna-8"),
+    ("liniers", "Liniers", "comuna-9"),
+    ("mataderos", "Mataderos", "comuna-9"),
+    ("parque-avellaneda", "Parque Avellaneda", "comuna-9"),
+    ("villa-real", "Villa Real", "comuna-10"),
+    ("monte-castro", "Monte Castro", "comuna-10"),
+    ("versalles", "Versalles", "comuna-10"),
+    ("floresta", "Floresta", "comuna-10"),
+    ("velez-sarsfield", "Velez Sarsfield", "comuna-10"),
+    ("villa-luro", "Villa Luro", "comuna-10"),
+    ("villa-general-mitre", "Villa General Mitre", "comuna-11"),
+    ("villa-devoto", "Villa Devoto", "comuna-11"),
+    ("villa-del-parque", "Villa del Parque", "comuna-11"),
+    ("villa-santa-rita", "Villa Santa Rita", "comuna-11"),
+    ("coghlan", "Coghlan", "comuna-12"),
+    ("saavedra", "Saavedra", "comuna-12"),
+    ("villa-urquiza", "Villa Urquiza", "comuna-12"),
+    ("villa-pueyrredon", "Villa Pueyrredon", "comuna-12"),
+    ("nunez", "Nuñez", "comuna-13"),
+    ("belgrano", "Belgrano", "comuna-13"),
+    ("colegiales", "Colegiales", "comuna-13"),
+    ("palermo", "Palermo", "comuna-14"),
+    ("chacarita", "Chacarita", "comuna-15"),
+    ("villa-crespo", "Villa Crespo", "comuna-15"),
+    ("la-paternal", "La Paternal", "comuna-15"),
+    ("villa-ortuzar", "Villa Ortuzar", "comuna-15"),
+    ("agronomia", "Agronomia", "comuna-15"),
+    ("parque-chas", "Parque Chas", "comuna-15"),
 ]
 
 # catalogo -> [(codigo, nombre, descripcion, orden)]

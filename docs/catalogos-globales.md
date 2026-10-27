@@ -5,7 +5,7 @@ de referencia compartidas. Esto reemplaza cualquier lista de barrios que tengan
 escrita a mano.
 
 > **Si sólo te interesa una cosa:** `GET /api/v1/catalogos/barrios` con el token
-> de tu módulo. Devuelve los 16 barrios con un identificador estable. Guardá el
+> de tu módulo. Devuelve los 48 barrios de CABA con un identificador estable. Guardá el
 > `codigo` (o el `id`) en tus datos, no el nombre.
 
 ---
@@ -37,10 +37,10 @@ Authorization: Bearer <token de tu módulo>
 [
   {
     "id": "f9ce3ea7-8806-4ba6-ae6e-f2446eae8126",
-    "codigo": "alto-verde",
-    "nombre": "Alto Verde",
-    "zona": "norte",
-    "zonaNombre": "Zona Norte",
+    "codigo": "palermo",
+    "nombre": "Palermo",
+    "zona": "comuna-14",
+    "zonaNombre": "Comuna 14",
     "metadatos": {},
     "activo": true
   }
@@ -49,7 +49,7 @@ Authorization: Bearer <token de tu módulo>
 
 | Filtro | Para qué |
 |:---|:---|
-| `?zona=ribera` | Sólo los barrios de una zona |
+| `?zona=comuna-4` | Sólo los barrios de una comuna |
 | `?q=villa` | Buscar por nombre, sin distinguir mayúsculas |
 | `?soloActivos=true` | Sólo los vigentes |
 
@@ -88,10 +88,10 @@ GET /api/v1/catalogos/zonas
 ```
 
 ```json
-[ { "codigo": "ribera", "nombre": "Ribera", "barrios": 3, "activo": true } ]
+[ { "codigo": "comuna-4", "nombre": "Comuna 4", "barrios": 4, "activo": true } ]
 ```
 
-Hoy son 5: `centro`, `norte`, `sur`, `oeste`, `ribera`.
+Son las 15 comunas de la Ciudad: `comuna-1` … `comuna-15`.
 
 ### Ojo con esto: son zonas *administrativas*
 
@@ -147,8 +147,8 @@ Escribinos con: qué falta o qué está mal, y el `codigo` que proponés si es u
 alta. Lo cargamos y queda disponible para todos en el acto.
 
 Los códigos son slugs: minúsculas, números y guiones simples
-(`villa-elisa`, `espacios-verdes`). **Se validan, no se auto-corrigen**: si
-mandás `Villa Elisa` o `Villa-Elisa` recibís un 422 en vez de que lo guardemos
+(`villa-crespo`, `espacios-verdes`). **Se validan, no se auto-corrigen**: si
+mandás `Villa Crespo` o `Villa-Crespo` recibís un 422 en vez de que lo guardemos
 distinto de como lo mandaste.
 
 ---
@@ -194,11 +194,10 @@ curl -s localhost:8000/api/v1/catalogos/barrios -H "Authorization: Bearer $TOKEN
 
 ## Lo que falta
 
-**Los datos de arranque son ficticios.** Las 5 zonas y los 16 barrios son una
-base coherente para que puedan integrar hoy, no el padrón real. Cuando el equipo
-o la cátedra definan la lista de verdad, la cargamos por la API sin tocar código
-— y los `codigo` que ya hayan guardado siguen siendo válidos si los nombres
-coinciden.
+**Los barrios y comunas son los reales de CABA** (Ley 2650): 48 barrios
+agrupados en 15 comunas. Los `codigo` son slugs estables (`palermo`, `la-boca`,
+`velez-sarsfield`) y no cambian aunque cambie el nombre mostrado. Si tu módulo
+ya guardó un `codigo`, sigue siendo válido.
 
 **Si tu módulo necesita un catálogo que no está**, decinos cuál. Agregar uno es
 cargar su primer item; no hay migración de por medio.

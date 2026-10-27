@@ -25,31 +25,38 @@ async def test_cualquier_modulo_lee_el_catalogo_de_barrios(client, auth):
 
 async def test_el_barrio_trae_un_identificador_estable_y_su_zona(client, auth):
     response = await client.get("/api/v1/catalogos/barrios", headers=await auth("obras"))
-    barrio = next(b for b in response.json() if b["codigo"] == "villa-elisa")
+    barrio = next(b for b in response.json() if b["codigo"] == "palermo")
 
-    assert barrio["nombre"] == "Villa Elisa"
-    assert barrio["zona"] == "norte"
+    assert barrio["nombre"] == "Palermo"
+    assert barrio["zona"] == "comuna-14"
     assert barrio["activo"] is True
     # Los dos identificadores que un modulo puede guardar en su propio dato.
     assert barrio["id"]
-    assert barrio["codigo"] == "villa-elisa"
+    assert barrio["codigo"] == "palermo"
 
 
 async def test_se_filtra_por_zona_y_se_busca_por_nombre(client, auth):
     headers = await auth("obras")
 
-    por_zona = await client.get("/api/v1/catalogos/barrios?zona=ribera", headers=headers)
-    assert {b["codigo"] for b in por_zona.json()} == {"puerto-viejo", "costanera", "isla-verde"}
+    # La Comuna 4 agrupa cuatro barrios de la ciudad.
+    por_zona = await client.get("/api/v1/catalogos/barrios?zona=comuna-4", headers=headers)
+    assert {b["codigo"] for b in por_zona.json()} == {
+        "la-boca",
+        "barracas",
+        "parque-patricios",
+        "nueva-pompeya",
+    }
 
-    buscados = await client.get("/api/v1/catalogos/barrios?q=villa", headers=headers)
-    assert [b["codigo"] for b in buscados.json()] == ["villa-elisa"]
+    # "pompeya" alcanza a un solo barrio; "villa" alcanzaria a muchos.
+    buscados = await client.get("/api/v1/catalogos/barrios?q=pompeya", headers=headers)
+    assert [b["codigo"] for b in buscados.json()] == ["nueva-pompeya"]
 
 
 async def test_las_zonas_dicen_cuantos_barrios_agrupan(client, auth):
     response = await client.get("/api/v1/catalogos/zonas", headers=await auth("obras"))
     zonas = {z["codigo"]: z for z in response.json()}
-    assert zonas["ribera"]["barrios"] == 3
-    assert zonas["centro"]["nombre"] == "Centro"
+    assert zonas["comuna-4"]["barrios"] == 4
+    assert zonas["comuna-1"]["nombre"] == "Comuna 1"
 
 
 async def test_sin_token_no_se_lee_el_catalogo(client):
@@ -71,7 +78,7 @@ async def test_un_modulo_comun_no_puede_tocar_el_catalogo(client, auth):
     assert crear.status_code == 403
 
     editar = await client.patch(
-        "/api/v1/catalogos/barrios/villa-elisa", json={"nombre": "Otro"}, headers=comun
+        "/api/v1/catalogos/barrios/palermo", json={"nombre": "Otro"}, headers=comun
     )
     assert editar.status_code == 403
 
@@ -80,11 +87,11 @@ async def test_el_admin_crea_un_barrio_y_queda_visible_para_todos(client, auth):
     admin = await auth("core")
     creado = await client.post(
         "/api/v1/catalogos/barrios",
-        json={"codigo": "nueva-esperanza", "nombre": "Nueva Esperanza", "zona": "oeste"},
+        json={"codigo": "nueva-esperanza", "nombre": "Nueva Esperanza", "zona": "comuna-10"},
         headers=admin,
     )
     assert creado.status_code == 201
-    assert creado.json()["zona"] == "oeste"
+    assert creado.json()["zona"] == "comuna-10"
 
     visto = await client.get(
         "/api/v1/catalogos/barrios/nueva-esperanza", headers=await auth("obras")
@@ -96,7 +103,7 @@ async def test_no_se_puede_repetir_un_codigo(client, auth):
     admin = await auth("core")
     response = await client.post(
         "/api/v1/catalogos/barrios",
-        json={"codigo": "villa-elisa", "nombre": "Otro Villa Elisa"},
+        json={"codigo": "palermo", "nombre": "Otro Palermo"},
         headers=admin,
     )
     assert response.status_code == 409
@@ -126,28 +133,28 @@ async def test_dar_de_baja_un_barrio_lo_desactiva_pero_no_lo_borra(client, auth)
     """Hay eventos historicos que lo referencian: el identificador no se reusa."""
     admin = await auth("core")
     baja = await client.patch(
-        "/api/v1/catalogos/barrios/isla-verde", json={"activo": False}, headers=admin
+        "/api/v1/catalogos/barrios/recoleta", json={"activo": False}, headers=admin
     )
     assert baja.status_code == 200
     assert baja.json()["activo"] is False
 
     # Sigue siendo consultable, que es lo que permite resolver un evento viejo.
     assert (
-        await client.get("/api/v1/catalogos/barrios/isla-verde", headers=admin)
+        await client.get("/api/v1/catalogos/barrios/recoleta", headers=admin)
     ).status_code == 200
 
     # Y no aparece cuando se piden solo los vigentes.
     vigentes = await client.get("/api/v1/catalogos/barrios?soloActivos=true", headers=admin)
-    assert "isla-verde" not in {b["codigo"] for b in vigentes.json()}
+    assert "recoleta" not in {b["codigo"] for b in vigentes.json()}
 
 
 async def test_no_se_puede_reusar_el_codigo_de_un_barrio_dado_de_baja(client, auth):
     admin = await auth("core")
-    await client.patch("/api/v1/catalogos/barrios/costanera", json={"activo": False}, headers=admin)
+    await client.patch("/api/v1/catalogos/barrios/belgrano", json={"activo": False}, headers=admin)
 
     repetido = await client.post(
         "/api/v1/catalogos/barrios",
-        json={"codigo": "costanera", "nombre": "Costanera Nueva"},
+        json={"codigo": "belgrano", "nombre": "Belgrano Nuevo"},
         headers=admin,
     )
     assert repetido.status_code == 409
@@ -209,7 +216,7 @@ async def test_el_admin_crea_y_renombra_una_zona(client, auth):
 async def test_no_se_puede_repetir_el_codigo_de_una_zona(client, auth):
     response = await client.post(
         "/api/v1/catalogos/zonas",
-        json={"codigo": "centro", "nombre": "Otro Centro"},
+        json={"codigo": "comuna-1", "nombre": "Otra Comuna 1"},
         headers=await auth("core"),
     )
     assert response.status_code == 409
@@ -218,9 +225,9 @@ async def test_no_se_puede_repetir_el_codigo_de_una_zona(client, auth):
 async def test_dar_de_baja_una_zona_no_borra_sus_barrios(client, auth):
     """La zona es una agrupacion: si desaparece, los barrios siguen existiendo."""
     admin = await auth("core")
-    await client.patch("/api/v1/catalogos/zonas/sur", json={"activo": False}, headers=admin)
+    await client.patch("/api/v1/catalogos/zonas/comuna-4", json={"activo": False}, headers=admin)
 
-    barrio = await client.get("/api/v1/catalogos/barrios/las-quintas", headers=admin)
+    barrio = await client.get("/api/v1/catalogos/barrios/la-boca", headers=admin)
     assert barrio.status_code == 200
     assert barrio.json()["activo"] is True
 
@@ -228,7 +235,8 @@ async def test_dar_de_baja_una_zona_no_borra_sus_barrios(client, auth):
 async def test_un_barrio_puede_no_tener_zona(client, auth):
     admin = await auth("core")
     creado = await client.post(
-        "/api/v1/catalogos/barrios", json={"codigo": "sin-zona", "nombre": "Sin Zona"},
+        "/api/v1/catalogos/barrios",
+        json={"codigo": "sin-zona", "nombre": "Sin Zona"},
         headers=admin,
     )
     assert creado.status_code == 201
@@ -236,9 +244,9 @@ async def test_un_barrio_puede_no_tener_zona(client, auth):
 
     # Y se le puede asignar una despues.
     asignado = await client.patch(
-        "/api/v1/catalogos/barrios/sin-zona", json={"zona": "centro"}, headers=admin
+        "/api/v1/catalogos/barrios/sin-zona", json={"zona": "comuna-1"}, headers=admin
     )
-    assert asignado.json()["zona"] == "centro"
+    assert asignado.json()["zona"] == "comuna-1"
 
     # Y sacarsela sin borrar el barrio.
     sacada = await client.patch(
