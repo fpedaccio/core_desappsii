@@ -90,6 +90,78 @@ jobs:
       - name: Test isolated testing bootstrap
         run: python -m unittest discover -s ../deploy/tests -v
 
+  testing-bootstrap:
+    name: Backend - Clean testing bootstrap
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PYTHONUNBUFFERED: "1"
+      GIT_TERMINAL_PROMPT: "0"
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Start complete stack from empty testing state
+        run: timeout 840s python3 deploy/testing_up.py --project-name muni-core-testing-ci --port 18082
+
+      - name: Verify reproducible startup evidence
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads(Path("deploy/.testing/bootstrap-result.json").read_text())
+          assert result["backend_ref"] == os.environ["TESTED_SHA"], "Unexpected backend revision"
+          assert result["backend_dirty"] is False, "Tracked/untracked source changed during startup"
+          assert result["fresh_credentials_and_no_previous_volumes"] is True, "State was reused"
+          assert result["project"] == "muni-core-testing-ci", "Unexpected Compose project"
+          assert result["http_port"] == 18082, "Unexpected HTTP port"
+          assert result["ready"] is True and result["worker_consumers"] is True
+          assert 0 < result["seconds"] <= 900, "Startup exceeded 15 minutes"
+          print("Fresh stack, exact commit, API and worker verified.")
+          PY
+
+      - name: Collect container status without secrets
+        if: always()
+        run: |
+          if [ -f deploy/.testing/.env ]; then
+            docker compose --project-name muni-core-testing-ci \
+              --env-file deploy/.testing/.env -f deploy/compose.yaml \
+              ps --all > deploy/.testing/containers.txt
+          fi
+
+      - name: Upload sanitized startup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testing-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            deploy/.testing/bootstrap-result.json
+            deploy/.testing/containers.txt
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop runner-local testing stack
+        if: always()
+        run: |
+          if [ -f deploy/.testing/.env ]; then
+            docker compose --project-name muni-core-testing-ci \
+              --env-file deploy/.testing/.env -f deploy/compose.yaml down
+          fi
+
   deploy:
     name: Backend - CD
     needs: [build, lint, test]
