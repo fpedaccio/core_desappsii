@@ -87,6 +87,9 @@ jobs:
       - name: Run PyTest
         run: pytest
 
+      - name: Test isolated testing bootstrap
+        run: python -m unittest discover -s ../deploy/tests -v
+
   deploy:
     name: Backend - CD
     needs: [build, lint, test]
