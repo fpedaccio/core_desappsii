@@ -36,3 +36,7 @@ deploy/private-logs/
 
 # Isolated testing checkout, credentials, volumes metadata and local evidence
 deploy/.testing/
+
+# Generated coverage evidence
+backend/coverage.json
+backend/coverage-summary.json

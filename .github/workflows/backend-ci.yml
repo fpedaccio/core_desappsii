@@ -84,11 +84,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run PyTest
-        run: pytest
+      - name: Run PyTest with line and branch coverage
+        run: python -m pytest --cov=app --cov-branch --cov-report=term-missing --cov-report=json:coverage.json --cov-report=xml:coverage.xml
 
-      - name: Test isolated testing bootstrap
+      - name: Verify business-service coverage thresholds
+        run: python ../deploy/check_coverage.py coverage.json --output coverage-summary.json
+
+      - name: Test deployment quality tooling
         run: python -m unittest discover -s ../deploy/tests -v
+
+      - name: Upload coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            backend/coverage.json
+            backend/coverage.xml
+            backend/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 14
 
   testing-bootstrap:
     name: Backend - Clean testing bootstrap
