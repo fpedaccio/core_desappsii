@@ -81,12 +81,14 @@ RabbitMQ por módulo. Falta el último paso, que es activar el mecanismo que el
 propio broker trae:
 
 1. En el publisher, marcar el mensaje con `user_id` (aio-pika: `user_id=` en el
-   `Message`). RabbitMQ **rechaza la publicación** si no coincide con el usuario
-   autenticado de la conexión: eso lo valida el broker, no nosotros.
+   `Message`). Precisión (27/10, verificado contra el broker): RabbitMQ valida
+   el `user_id` **cuando viene** —rechaza si no coincide con el usuario de la
+   conexión— pero **no rechaza su ausencia** por defecto. Así que para que esto
+   sea una garantía hay que **exigirlo**, no solo permitirlo.
 2. En el worker, comparar ese `user_id` contra `envelope.sourceModule` y
-   rechazar si difieren.
+   rechazar si difieren. Este paso es nuestro y todavía no está implementado.
 
-El paso 1 es el que da la garantía; el 2 es el que la traduce a nuestro modelo.
+Los dos pasos juntos dan la garantía; hoy no está ninguno activo.
 
 **Cuándo.** Es un cambio chico de nuestro lado, pero **rompe a todo módulo que
 hoy publica sin `user_id`**. Hay que avisarlo con fecha y darles una ventana.
@@ -209,6 +211,21 @@ revisamos una por una. Lo que ya sabemos que el sobre **sí** hace cumplir:
 rechaza campos no declarados (`extra="forbid"`), exige `occurredAt` con offset de
 zona, y valida que los UUID sean interpretables — aunque **no** exige RFC
 estricto: acepta cualquier versión y variante.
+
+**Precisión (27/10) sobre dónde termina un evento inválido** —corrige lo que
+dijimos antes, que mezclaba dos casos:
+
+- **Sobre inválido** (campo no declarado, falta un obligatorio, `occurredAt` sin
+  zona): se rechaza con **`422` en el borde HTTP, antes de entrar al hub**, y
+  **no** queda en la DLQ. El productor se entera en la respuesta; no hay registro
+  que reprocesar.
+- **Sobre válido pero `data` que no cumple el schema** (incluido `format` si se
+  activa): ahí **sí** entra al hub, se registra y queda en la **DLQ** con el
+  detalle del campo, reprocesable.
+
+Por AMQP no hay `422`: un sobre inválido se descarta y queda en la DLQ como
+mensaje ilegible; conviene publicar por HTTP mientras se prueba, para ver el
+error en el acto.
 
 ---
 

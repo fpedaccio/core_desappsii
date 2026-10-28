@@ -236,11 +236,15 @@ otro lado. Omitirlo es lo que recomendamos, que es lo que ya hacen.
 Tres de las cuatro **no son nuestras**, y creemos que por eso quedaron sin
 respuesta tanto tiempo. Lo decimos para que no sigan esperándonos:
 
-**Catálogo de barrios con `neighborhoodId` estable.** No es del Core. Nosotros
-no tenemos datos maestros: no sabemos de barrios, ciudadanos ni expedientes,
-sólo movemos sobres. Quien tenga el padrón territorial es el que tiene que
-publicarlo. Nuestra lectura es que le corresponde a Ciudadanos, pero es una
-suposición nuestra; conviene preguntarlo en el grupo general.
+**Catálogo de barrios con `neighborhoodId` estable.** Corrección (27/10): esto
+**sí es del Core** — el enunciado le asigna "barrios, zonas y catálogos
+globales" al módulo 9. Nos equivocamos antes al decir que no. Ya está
+implementado y cargado con los **48 barrios reales de CABA** agrupados en las 15
+comunas: `GET /api/v1/catalogos/barrios`. Cada barrio trae `id` (UUID) y
+`codigo` (slug, ej. `palermo`), los dos estables. Nota de contrato: el schema
+v1.78 de M2 hoy exige **UUID o null** en `neighborhoodId`, así que por ahora va
+el `id`; pasar al `codigo` (más robusto ante una recarga del catálogo) requiere
+acordar el cambio de contrato con M2 primero.
 
 **Si nuestra "zona" es su zona operativa.** No tenemos ninguna "zona". El único
 tipo del catálogo con ese concepto es `zoneNotServiced`, **y es de ustedes**
