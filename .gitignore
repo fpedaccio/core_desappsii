@@ -40,3 +40,6 @@ deploy/.testing/
 # Generated coverage evidence
 backend/coverage.json
 backend/coverage-summary.json
+
+# Dedicated integration credentials, databases metadata and reports
+deploy/.integration/

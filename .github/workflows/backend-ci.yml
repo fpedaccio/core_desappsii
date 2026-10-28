@@ -177,6 +177,70 @@ jobs:
               --env-file deploy/.testing/.env -f deploy/compose.yaml down
           fi
 
+  real-integration:
+    name: Backend - PostgreSQL and RabbitMQ integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run integration with real dependencies
+        run: timeout 840s python3 deploy/integration_up.py
+
+      - name: Verify real integration evidence
+        run: |
+          python3 - <<'PYCODE'
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          evidence = Path("deploy/.integration/evidence")
+          result = json.loads((evidence / "run.json").read_text())
+          assert result["test_exit_code"] == 0
+          assert result["backend_ref"] == os.environ["TESTED_SHA"]
+          assert result["backend_dirty"] is False
+          assert result["project"] == "muni-core-testing-integration"
+          cases = list(ET.parse(evidence / "integration.xml").getroot().iter("testcase"))
+          assert len(cases) >= 8, "Missing integration cases"
+          assert all(case.find(tag) is None for case in cases for tag in ("failure", "error", "skipped"))
+          print(f"Real PostgreSQL/RabbitMQ integration: {len(cases)} cases passed.")
+          PYCODE
+
+      - name: Upload integration evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-integration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            deploy/.integration/evidence/integration.xml
+            deploy/.integration/evidence/run.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop runner-local integration services
+        if: always()
+        run: |
+          if [ -f deploy/.integration/.env ]; then
+            docker compose --project-name muni-core-testing-integration \
+              --env-file deploy/.integration/.env -f deploy/compose.integration.yaml down
+          fi
+
   deploy:
     name: Backend - CD
     needs: [build, lint, test]
