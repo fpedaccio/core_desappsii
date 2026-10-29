@@ -1,5 +1,6 @@
 """Create local credentials once; never overwrite an existing configuration."""
 
+import argparse
 import os
 import secrets
 from pathlib import Path
@@ -8,8 +9,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 
-def main() -> None:
-    root = Path(__file__).resolve().parent
+def prepare(root: Path) -> None:
+    root.mkdir(parents=True, exist_ok=True)
     env = root / ".env"
     key_dir = root / "secrets"
     key_path = key_dir / "jwt-private.pem"
@@ -31,6 +32,7 @@ def main() -> None:
     with env.open("x", encoding="utf-8") as handle:
         handle.write(
             f"POSTGRES_PASSWORD={secrets.token_urlsafe(32)}\n"
+            f"APP_DB_PASSWORD={secrets.token_urlsafe(32)}\n"
             f"RABBITMQ_PASSWORD={secrets.token_urlsafe(32)}\n"
             f"SEED_INITIAL_PASSWORD={secrets.token_urlsafe(24)}\n"
             "CORS_ORIGINS=http://localhost:8080\n"
@@ -39,6 +41,13 @@ def main() -> None:
         )
     os.chmod(env, 0o600)
     print("Created local credentials. Do not upload .env, secrets, or seed logs.")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, default=Path(__file__).resolve().parent)
+    args = parser.parse_args()
+    prepare(args.output_dir.resolve())
 
 
 if __name__ == "__main__":

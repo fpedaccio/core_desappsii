@@ -3,7 +3,7 @@ name: muni-core
 x-app: &app
   build:
     context: ../backend
-  image: muni-core-backend:local
+  image: ${CORE_BACKEND_IMAGE:-muni-core-backend:local}
   environment: &environment
     ENVIRONMENT: production
     DEBUG: "false"
@@ -28,8 +28,10 @@ services:
       POSTGRES_DB: muni_core
       POSTGRES_USER: core
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run prepare_local.py}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Missing APP_DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U core -d muni_core"]
       interval: 5s
@@ -111,12 +113,12 @@ services:
         max-size: "10m"
         max-file: "3"
     build:
-      context: ../../core-frontend
+      context: ${CORE_FRONTEND_PATH:-../../core-frontend}
       args:
         VITE_API_URL: /api/v1
-    image: muni-core-frontend:local
+    image: ${CORE_FRONTEND_IMAGE:-muni-core-frontend:local}
     ports:
-      - "127.0.0.1:8080:80"
+      - "127.0.0.1:${CORE_HTTP_PORT:-8080}:80"
     depends_on:
       api:
         condition: service_healthy
@@ -128,4 +130,4 @@ volumes:
 
 secrets:
   jwt_private_key:
-    file: ./secrets/jwt-private.pem
+    file: ${JWT_PRIVATE_KEY_PATH:-./secrets/jwt-private.pem}
