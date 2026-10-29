@@ -1,0 +1,117 @@
+name: Core browser E2E
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-e2e:
+    name: Core - Five real-browser scenarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
+      GIT_TERMINAL_PROMPT: "0"
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Start isolated E2E stack
+        run: python3 deploy/e2e_up.py
+
+      - name: Verify candidate and fresh startup
+        run: |
+          python3 - <<'PYCODE'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads(
+              Path("deploy/.testing/bootstrap-result.json").read_text()
+          )
+          assert result["backend_ref"] == os.environ["TESTED_SHA"]
+          assert result["backend_dirty"] is False
+          assert result["frontend_ref"] == "4a2fb0b569297a2fe75aef650780d6e9d39dbcaf"
+          assert result["project"] == "muni-core-testing-e2e"
+          assert result["http_port"] == 18083
+          assert result["fresh_credentials_and_no_previous_volumes"] is True
+          assert result["ready"] is True
+          assert result["worker_consumers"] is True
+          print("Exact candidate and fresh E2E stack verified.")
+          PYCODE
+
+      - name: Prepare browser image
+        run: docker pull mcr.microsoft.com/playwright/python:v1.64.1-noble
+
+      - name: Run five browser scenarios
+        run: python3 deploy/e2e_run.py
+
+      - name: Verify all five scenarios passed
+        run: |
+          python3 - <<'PYCODE'
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          folders = [
+              path for path in Path("deploy/.testing/evidence").glob("e2e-*")
+              if path.is_dir()
+          ]
+          assert len(folders) == 1, "Expected one browser execution"
+          folder = folders[0]
+          result = json.loads((folder / "summary.json").read_text())
+          assert result["tests"] == 5
+          assert result["failures"] == 0
+          assert result["errors"] == 0
+          assert result["skipped"] == 0
+          assert result["passed"] is True
+          cases = list(
+              ET.parse(folder / "e2e.xml").getroot().iter("testcase")
+          )
+          assert len(cases) == 5
+          assert all(
+              case.find(tag) is None
+              for case in cases
+              for tag in ("failure", "error", "skipped")
+          )
+          print("Five browser scenarios passed without omissions.")
+          PYCODE
+
+      - name: Upload browser reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            deploy/.testing/bootstrap-result.json
+            deploy/.testing/evidence/e2e-*/summary.json
+            deploy/.testing/evidence/e2e-*/e2e.xml
+            deploy/.testing/evidence/e2e-*/run.json
+            deploy/.testing/evidence/e2e-*/browser-tests.log
+            deploy/.testing/evidence/e2e-*/execution.log
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop runner-local E2E stack
+        if: always()
+        run: |
+          if [ -f deploy/.testing/.env ]; then
+            docker compose --project-name muni-core-testing-e2e \
+              --env-file deploy/.testing/.env \
+              -f deploy/compose.yaml down
+          fi

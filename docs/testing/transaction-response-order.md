@@ -21,7 +21,24 @@ el commit antes de enviar la respuesta. Se mantiene el rollback existente.
 
 ## Validaci?n
 
-Pendiente de ejecutar sobre la imagen reconstruida.
+Validaci?n local completada sobre la candidata del commit
+78a82085d68cc1de7254fc579e8b8a6c7ac67abe:
+
+- E2E: 5 pruebas aprobadas, sin fallos ni omisiones, en 11,700 segundos.
+  La consulta inmediata del evento rechazado funcion? sin agregar esperas.
+- Backend: 196 tests aprobados en 314,88 segundos.
+  Cobertura combinada informada: 89 %. pip check aprobado.
+- Integraci?n con PostgreSQL y RabbitMQ reales:
+  8 tests aprobados en 12,34 segundos; c?digo de salida 0.
+
+Evidencias locales:
+- deploy/.testing/evidence/e2e-20261029-172940-e1af79/
+- deploy/.testing/evidence/transaction-regression-20261029-173329/
+- deploy/.integration/evidence/
+
+Se conservan tambi?n las ejecuciones fallidas y sus diagn?sticos.
+Estos resultados no equivalen a una ejecuci?n aprobada en CI ni al cierre
+de todos los criterios del TP.
 La prueba E2E conserva la consulta inmediata: no acepta un 404 transitorio.
 Las evidencias anteriores se conservan.
 Esta correcci?n no resuelve la atomicidad entre PostgreSQL y RabbitMQ.
