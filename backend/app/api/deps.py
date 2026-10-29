@@ -46,7 +46,7 @@ from app.services.registry_service import RegistryService
 from app.services.stats_service import StatsService
 from app.services.user_service import UserService
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 
 # auto_error=False para devolver el error con la forma unificada del Core en
 # lugar del 403 crudo de Starlette.
