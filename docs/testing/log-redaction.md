@@ -49,3 +49,26 @@ reutilizar las herramientas de pruebas.
 
 El cambio aun no se verifico en los logs de la API reconstruida.
 No se desplego en AWS.
+
+## Verificacion HTTP posterior al checkpoint
+
+Se reconstruyo la API local y se verificaron por SHA-256 los archivos
+logging.py y log_redaction.py contra el codigo local.
+
+Un login fallido con una identidad sintetica inexistente respondio 401
+INVALID_CREDENTIALS. Se encontro su log mediante un traceId exclusivo:
+
+- Marcador [REDACTED] presente.
+- Correo sintetico ausente de la muestra de logs.
+- Contrasena sintetica ausente de la muestra.
+- Los logs originales no se mostraron ni se guardaron.
+
+Evidencia:
+deploy/.testing/evidence/log-redaction-http-20261031-165138/results.json
+
+Esta comprobacion completa el paso local que estaba pendiente en el
+checkpoint anterior. No cubre todos los caminos de logging ni logs de
+terceros, y no elimina registros historicos.
+
+Al retomar: abrir el PR sobre devops/auth-rate-limit-20261031,
+verificar CI y actualizar la matriz con el resultado acotado.
