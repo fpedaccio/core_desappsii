@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   browser-e2e:
-    name: Core - Five real-browser scenarios
+    name: Core - Six real-browser scenarios
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -45,7 +45,7 @@ jobs:
           )
           assert result["backend_ref"] == os.environ["TESTED_SHA"]
           assert result["backend_dirty"] is False
-          assert result["frontend_ref"] == "1d8d1b8325767da8926b98325e904d11a6cdfb3d"
+          assert result["frontend_ref"] == "cfa32debbda11a87efbf2f16125349b88c2a8755"
           assert result["project"] == "muni-core-testing-e2e"
           assert result["http_port"] == 18083
           assert result["fresh_credentials_and_no_previous_volumes"] is True
@@ -57,10 +57,10 @@ jobs:
       - name: Prepare browser image
         run: docker pull mcr.microsoft.com/playwright/python:v1.64.1-noble
 
-      - name: Run five browser scenarios
+      - name: Run six browser scenarios
         run: python3 deploy/e2e_run.py
 
-      - name: Verify all five scenarios passed
+      - name: Verify all six scenarios passed
         run: |
           python3 - <<'PYCODE'
           import json
@@ -74,7 +74,7 @@ jobs:
           assert len(folders) == 1, "Expected one browser execution"
           folder = folders[0]
           result = json.loads((folder / "summary.json").read_text())
-          assert result["tests"] == 5
+          assert result["tests"] == 6
           assert result["failures"] == 0
           assert result["errors"] == 0
           assert result["skipped"] == 0
@@ -82,7 +82,7 @@ jobs:
           cases = list(
               ET.parse(folder / "e2e.xml").getroot().iter("testcase")
           )
-          assert len(cases) == 5
+          assert len(cases) == 6
           assert all(
               case.find(tag) is None
               for case in cases
@@ -91,9 +91,9 @@ jobs:
           observations = json.loads(
               (folder / "csp-observations.json").read_text()
           )
-          assert len(observations) == 5
+          assert len(observations) == 6
           assert all(not item["violations"] for item in observations)
-          print("Five browser scenarios passed without omissions or observed CSP violations.")
+          print("Six browser scenarios passed without omissions or observed CSP violations.")
           PYCODE
 
       - name: Upload browser reports only
@@ -109,6 +109,7 @@ jobs:
             deploy/.testing/evidence/e2e-*/browser-tests.log
             deploy/.testing/evidence/e2e-*/execution.log
             deploy/.testing/evidence/e2e-*/csp-observations.json
+            deploy/.testing/evidence/e2e-*/metrics-fonts.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 14

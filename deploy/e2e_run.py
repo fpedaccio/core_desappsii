@@ -1,4 +1,4 @@
-"""Run five browser candidates only against the dedicated local E2E project."""
+"""Run six browser candidates only against the dedicated local E2E project."""
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -12,7 +12,7 @@ from testing_up import Bootstrap, read_env
 
 PROJECT = 'muni-core-testing-e2e'
 IMAGE = 'mcr.microsoft.com/playwright/python:v1.64.1-noble'
-FRONTEND = '1d8d1b8325767da8926b98325e904d11a6cdfb3d'
+FRONTEND = 'cfa32debbda11a87efbf2f16125349b88c2a8755'
 
 
 def main():
@@ -90,7 +90,7 @@ def main():
             '--mount', f'type=bind,source={evidence},target=/evidence',
             IMAGE, '-c', setup,
         ]
-        print('Running five real-browser candidates. Evidence:', evidence, flush=True)
+        print('Running six real-browser candidates. Evidence:', evidence, flush=True)
         started = True
         completed = subprocess.run(command, capture_output=True, text=True, encoding='utf-8',
                                    errors='replace', timeout=1100)
@@ -104,7 +104,7 @@ def main():
         if (evidence / 'summary.json').exists():
             summary = json.loads((evidence / 'summary.json').read_text())
             passed = (completed.returncode == 0 and summary.get('passed') is True
-                      and summary.get('tests') == 5 and summary.get('errors') == 0
+                      and summary.get('tests') == 6 and summary.get('errors') == 0
                       and summary.get('failures') == 0 and summary.get('skipped') == 0)
         metadata['passed'] = passed
         return 0 if passed else 1

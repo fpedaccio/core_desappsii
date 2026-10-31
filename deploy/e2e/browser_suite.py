@@ -1,4 +1,4 @@
-"""Five real-browser candidate scenarios; no HTTP mocking or session injection."""
+"""Six real-browser candidate scenarios; no HTTP mocking or session injection."""
 import base64
 from datetime import datetime, timezone
 import io
@@ -167,6 +167,10 @@ class CoreBrowserTests(unittest.TestCase):
         self.assertIn("default-src 'self'", policy)
         self.assertIn("script-src 'self'", policy)
         self.assertIn("frame-ancestors 'none'", policy)
+        self.assertIn("style-src 'self';", policy)
+        self.assertIn("font-src 'self';", policy)
+        self.assertNotIn("'unsafe-inline'", policy)
+        self.assertNotIn("fonts.googleapis.com", policy)
         self.assertEqual(response.headers.get('x-frame-options'), 'DENY')
         expect(self.page.get_by_role('heading', name='Iniciar sesión')).to_be_visible()
 
@@ -206,6 +210,36 @@ class CoreBrowserTests(unittest.TestCase):
     def broker_queue(self):
         path = '/queues/core/' + urllib.parse.quote('q.' + self.target, safe='')
         return path
+
+    def test_06_metrics_fonts_and_dynamic_styles(self):
+        self.ui_login(self.source)
+        self.page.goto(BASE + "/metrics")
+        expect(self.page.get_by_role(
+            "heading", name="M\u00e9tricas: " + self.source, exact=True
+        )).to_be_visible()
+        expect(self.page.locator(".volume-bar-fill").first).to_be_visible()
+        height = self.page.locator(".volume-bar-fill").first.evaluate(
+            "(element) => element.getBoundingClientRect().height"
+        )
+        self.assertGreater(height, 0)
+        fonts = self.page.evaluate("""async () => {
+            const inter = await document.fonts.load('400 16px "Inter"', '?rbol ?');
+            const mono = await document.fonts.load('400 16px "JetBrains Mono"', 'abc123');
+            await document.fonts.ready;
+            return {
+                inter: inter.length > 0 && inter.every(f => f.status === 'loaded'),
+                mono: mono.length > 0 && mono.every(f => f.status === 'loaded'),
+                externalResources: performance.getEntriesByType('resource')
+                    .map(r => r.name)
+                    .filter(url => new URL(url).origin !== location.origin),
+            };
+        }""")
+        self.assertTrue(fonts["inter"], "Inter did not load")
+        self.assertTrue(fonts["mono"], "JetBrains Mono did not load")
+        self.assertEqual(fonts["externalResources"], [])
+        Path("/evidence/metrics-fonts.json").write_text(json.dumps({
+            "bar_height": height, **fonts,
+        }, indent=2))
 
     def test_01_login_reload_logout(self):
         self.ui_login(self.target)
@@ -335,7 +369,7 @@ if __name__ == '__main__':
     ET.ElementTree(xml).write('/evidence/e2e.xml', encoding='utf-8', xml_declaration=True)
     summary = {'tests': result.testsRun, 'failures': len(result.failures),
                'errors': len(result.errors), 'skipped': len(result.skipped),
-               'passed': result.wasSuccessful() and result.testsRun == 5 and not result.skipped}
+               'passed': result.wasSuccessful() and result.testsRun == 6 and not result.skipped}
     Path('/evidence/summary.json').write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary), flush=True)
     raise SystemExit(0 if summary['passed'] else 1)
