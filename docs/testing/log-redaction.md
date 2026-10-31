@@ -72,3 +72,14 @@ terceros, y no elimina registros historicos.
 
 Al retomar: abrir el PR sobre devops/auth-rate-limit-20261031,
 verificar CI y actualizar la matriz con el resultado acotado.
+
+## Cierre de CI del candidato
+
+PR #10 abierto sobre devops/auth-rate-limit-20261031.
+El commit 9adafb0b32a1f15c1b0705c250810d4a5fe423e2 aprobo build,
+Ruff, PyTest, integracion, bootstrap limpio y seis E2E en push y PR.
+La verificacion HTTP local posterior al checkpoint tambien aprobo.
+
+Esto completa los pasos locales y de CI que estaban pendientes en las
+secciones anteriores. Se mantienen los limites de alcance del filtro;
+no se declara saneamiento integral de todos los logs ni despliegue AWS.
