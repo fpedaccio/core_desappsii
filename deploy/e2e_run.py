@@ -12,7 +12,7 @@ from testing_up import Bootstrap, read_env
 
 PROJECT = 'muni-core-testing-e2e'
 IMAGE = 'mcr.microsoft.com/playwright/python:v1.64.1-noble'
-FRONTEND = 'cfa32debbda11a87efbf2f16125349b88c2a8755'
+FRONTEND = '6353a6dfd3613d17ade5564b96b7e09dfec70573'
 
 
 def main():
