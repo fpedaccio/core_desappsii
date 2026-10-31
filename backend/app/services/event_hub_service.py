@@ -117,6 +117,25 @@ class EventHubService:
         *,
         channel: IngestionChannel = IngestionChannel.AMQP,
     ) -> IngestResult:
+        """Record receipt late and atomically without counting duplicates."""
+        started = utcnow()
+        result = await self._ingest(envelope, channel=channel)
+        if not result.duplicate:
+            # A newly discovered type already starts with one receipt.
+            if not result.event_type_discovered:
+                await self.event_type_repo.record_received(
+                    envelope.event_type,
+                    seen_at=result.event_log.received_at,
+                )
+            result.event_log.processing_ms = _elapsed_ms(started)
+        return result
+
+    async def _ingest(
+        self,
+        envelope: EventEnvelope,
+        *,
+        channel: IngestionChannel = IngestionChannel.AMQP,
+    ) -> IngestResult:
         """Procesa un evento de punta a punta.
 
         No levanta excepciones por eventos invalidos: los registra, los manda a

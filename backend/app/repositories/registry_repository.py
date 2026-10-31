@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.orm import joinedload
 
 from app.models.registry import EventType, ModuleAccount, Publication, Subscription
@@ -72,10 +72,7 @@ class EventTypeRepository(BaseRepository[EventType]):
         """
         existing = await self.get_by_name(name)
         if existing is not None:
-            existing.last_seen_at = seen_at
-            existing.total_received = (existing.total_received or 0) + 1
-            if existing.first_seen_at is None:
-                existing.first_seen_at = seen_at
+            # Existing counters are updated atomically after routing.
             return existing, False
 
         event_type = EventType(
@@ -91,6 +88,41 @@ class EventTypeRepository(BaseRepository[EventType]):
         self.add(event_type)
         await self.flush()
         return event_type, True
+
+
+    async def record_received(self, name: str, *, seen_at: datetime) -> None:
+        """Increment in SQL after routing, in the same transaction as the event."""
+        statement = (
+            update(EventType)
+            .where(EventType.name == name.strip())
+            .values(
+                total_received=func.coalesce(EventType.total_received, 0) + 1,
+                first_seen_at=case(
+                    (
+                        or_(
+                            EventType.first_seen_at.is_(None),
+                            EventType.first_seen_at > seen_at,
+                        ),
+                        seen_at,
+                    ),
+                    else_=EventType.first_seen_at,
+                ),
+                last_seen_at=case(
+                    (
+                        or_(
+                            EventType.last_seen_at.is_(None),
+                            EventType.last_seen_at < seen_at,
+                        ),
+                        seen_at,
+                    ),
+                    else_=EventType.last_seen_at,
+                ),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        result = await self.session.execute(statement)
+        if result.rowcount != 1:
+            raise RuntimeError("Event type missing while recording receipt")
 
 
 class SubscriptionRepository(BaseRepository[Subscription]):
