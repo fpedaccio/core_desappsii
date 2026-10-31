@@ -51,7 +51,21 @@ porque pueden contener el token sintetico.
 - Mantener abiertos los dos hallazgos medios del baseline del frontend:
   style-src unsafe-inline y falta de SRI en el recurso externo.
 - Consolidar estos resultados en la matriz de seguridad del TP.
-- Limpiar la cuenta y los recursos sinteticos cuando finalice su uso.
+## Cierre de la cuenta sintetica
+
+Se verifico la desactivacion del modulo qa-zap-ed9a972ac87e, su usuario,
+suscripcion y publicaciones. Se elimino el hash del secreto de maquina,
+se sustituyo el hash de la contrasena por uno aleatorio y se retiraron
+las credenciales del archivo privado de preparacion.
+
+La cola, los registros historicos y los informes originales privados se
+conservaron. Estos informes pueden contener tokens emitidos durante las
+pruebas y siguen requiriendo tratamiento privado. Esta limpieza no
+acredita la revocacion inmediata de tokens ya emitidos.
+
+Evidencia:
+deploy/.testing/evidence/zap-fixture-cleanup-20261031-154411/results.json
+
 
 No se aplicaron exclusiones al escaner para ocultar alertas.
 Los resultados corresponden al entorno local; no acreditan despliegue
