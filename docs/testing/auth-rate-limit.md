@@ -83,6 +83,6 @@ Los informes originales permanecen fuera de Git.
 ## Estado de entrega
 
 Verificado en la API local muni-core-testing-zap.
-CI del nuevo cambio pendiente de verificar.
+CI verificado en el candidato descendiente 9adafb0: build, Ruff, PyTest, integracion, bootstrap limpio y seis E2E aprobados en push y PR.
 No desplegado en AWS. No acredita por si solo el cierre del requisito
 completo de fuerza bruta ni de G1-G9.

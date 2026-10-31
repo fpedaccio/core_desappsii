@@ -38,22 +38,33 @@ Los pendientes no se consideran riesgos aceptados automaticamente.
 | Dependencias frontend de produccion | Cero hallazgos en auditoria final ejecutada | frontend-targeted-dev-fix; no cubre paquetes del sistema operativo |
 | Dependencias frontend de desarrollo | Moderados eliminados con overrides probados; cinco bajos restantes | glob/minimatch corregidos; aviso deepmerge y propagacion en Jest pendientes |
 | Historial Git y secretos | Auditoria historica previa documentada, pendiente refrescar para candidato final | No afirmar que cubre commits posteriores |
-| Logs y datos sensibles | Pendiente revision sistematica | Algunas respuestas se revisaron; no acredita todos los logs |
+| Logs y datos sensibles | Filtro probado y censura verificada con login sintetico en API reconstruida | log-redaction.md; pendiente ampliar revision a otros caminos y logs fuera de structlog |
 | Cuenta original de ZAP | Desactivacion y retirada de credenciales verificadas | Cola e informes privados conservados; no acredita revocacion inmediata de JWT |
 | Fixtures E2E | La suite desactiva modulos sinteticos al finalizar | No equivale a borrado integral de usuarios, colas o registros historicos |
 
 ## Versiones y CI
 
-- Frontend de refuerzo: cfa32debbda11a87efbf2f16125349b88c2a8755.
-- Frontend final con overrides: 6353a6dfd3613d17ade5564b96b7e09dfec70573.
-- Backend con seis escenarios y pin inicial: c800ce4, checks aprobados.
-- Backend con pin final: 4451d163bee9ae25791b6a14f1a70d7976203649.
-  Su CI estaba en ejecucion al preparar este documento; falta registrar
-  el resultado final.
+Candidato de codigo verificado:
+- Backend: 9adafb0b32a1f15c1b0705c250810d4a5fe423e2.
+- Frontend fijado: 6353a6dfd3613d17ade5564b96b7e09dfec70573.
 
-El build, lint y tests del push del frontend 6353a6d aprobaron.
-No trasladar automaticamente los resultados del frontend anterior al
-candidato final sin comprobar la ejecucion con el nuevo pin.
+Los checks del backend aprobaron en push y PR:
+build, Ruff, PyTest, integracion PostgreSQL/RabbitMQ, bootstrap limpio
+y seis escenarios reales de navegador. CD quedo omitido.
+
+Ejecuciones del PR:
+- https://github.com/fpedaccio/core_desappsii/actions/runs/41236572733
+- https://github.com/fpedaccio/core_desappsii/actions/runs/41236572861
+
+Ejecuciones del push:
+- https://github.com/fpedaccio/core_desappsii/actions/runs/41236310298
+- https://github.com/fpedaccio/core_desappsii/actions/runs/41236310261
+
+El frontend 6353a6d tambien aprobo lint, tests y build en push y PR.
+
+La verificacion corresponde a estos commits. No acredita merge en main,
+tag final, despliegue AWS ni tres ejecuciones consecutivas sobre una
+misma referencia final.
 
 ## Evidencias y conservacion
 
