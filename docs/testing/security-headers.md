@@ -70,3 +70,18 @@ para que CI pruebe esta nueva revision, verificar esos runs y revisar los PR.
 El hallazgo de AWS permanece abierto hasta aplicar y verificar alli
 la correccion. No se ha demostrado la politica de cookies autenticadas
 ni el cumplimiento completo de CORS con estas comprobaciones.
+
+## Preparacion de la automatizacion CSP
+
+Los arranques general y E2E apuntan al frontend:
+1d8d1b8325767da8926b98325e904d11a6cdfb3d.
+
+La suite versionada incorpora la observacion de violaciones CSP usada
+en la comprobacion local. Agrega aserciones sobre los headers CSP y
+X-Frame-Options de la pagina inicial de cada escenario.
+
+El workflow exige cinco escenarios sin omisiones, cinco registros CSP
+sin violaciones y conserva esas observaciones como artefacto.
+
+Estado: cambios preparados; pendiente de ejecutar el CI sobre este commit.
+El hallazgo de AWS sigue abierto hasta despliegue y verificacion.
