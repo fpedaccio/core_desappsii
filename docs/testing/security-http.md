@@ -53,3 +53,32 @@ No contienen claves, secretos ni tokens de autenticaci?n.
   inyecci?n, cabeceras, CORS, registros y escaneo autenticado.
 - Este informe no constituye una aprobaci?n global de seguridad
   ni reemplaza la matriz de cumplimiento y el registro de defectos.
+
+## Continuacion y punto de pausa del 31 de octubre
+
+Se agregaron nueve comprobaciones aprobadas de campos no autorizados
+y escalamiento de privilegios. Total acumulado: 41 comprobaciones
+aprobadas, incluyendo controles positivos y verificaciones de estado.
+
+En los casos ensayados, enviar isAdmin, role o cambios de modulo no
+otorgo privilegios. Los campos desconocidos fueron ignorados; no se
+considera una vulnerabilidad por si solo si no alteran los permisos.
+Evidencia: deploy/.testing/evidence/security-mass-assignment-20261031-133930/results.json
+
+Se observo ademas el comportamiento de una cuenta sintetica ante seis
+logins fallidos, con un login valido inicial de control:
+- Los seis intentos devolvieron 401 INVALID_CREDENTIALS.
+- La cuenta termino desactivada.
+- El login posterior con la contrase?a correcta devolvio
+  403 ACCOUNT_INACTIVE.
+- No se observo HTTP 429 ni Retry-After en esta secuencia.
+- El modulo sintetico quedo desactivado y no hubo errores de ejecucion.
+
+Esta observacion NO se contabiliza como aprobacion de rate limiting.
+El bloqueo de cuenta y la limitacion de frecuencia son controles distintos.
+Evidencia: deploy/.testing/evidence/security-login-attempts-20261031-134035/results.json
+
+Al retomar: evaluar el requisito de rate limiting contra la implementacion,
+registrar el hallazgo que corresponda y continuar los controles pendientes.
+Las comprobaciones nuevas siguen siendo ejecuciones locales; aun no
+estan incorporadas como suite de seguridad en CI.
