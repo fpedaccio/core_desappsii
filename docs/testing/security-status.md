@@ -38,7 +38,7 @@ Los pendientes no se consideran riesgos aceptados automaticamente.
 | Dependencias frontend de produccion | Cero hallazgos en auditoria final ejecutada | frontend-targeted-dev-fix; no cubre paquetes del sistema operativo |
 | Dependencias frontend de desarrollo | Moderados eliminados con overrides probados; cinco bajos restantes | glob/minimatch corregidos; aviso deepmerge y propagacion en Jest pendientes |
 | Historial Git y secretos | Auditoria historica previa documentada, pendiente refrescar para candidato final | No afirmar que cubre commits posteriores |
-| Logs y datos sensibles | Pendiente revision sistematica | Algunas respuestas se revisaron; no acredita todos los logs |
+| Logs y datos sensibles | Muestra revisada; filtro central preparado y probado | log-redaction.md; falta verificar API reconstruida y completar revision de logs fuera de structlog |
 | Cuenta original de ZAP | Desactivacion y retirada de credenciales verificadas | Cola e informes privados conservados; no acredita revocacion inmediata de JWT |
 | Fixtures E2E | La suite desactiva modulos sinteticos al finalizar | No equivale a borrado integral de usuarios, colas o registros historicos |
 
