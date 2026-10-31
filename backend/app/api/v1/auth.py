@@ -11,7 +11,10 @@ el acceso al dashboard a nadie.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+import hashlib
+
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from app.api.deps import AuthDep, CallerDep
 from app.api.v1.schemas.dto import (
@@ -20,8 +23,32 @@ from app.api.v1.schemas.dto import (
     ModuleTokenRequest,
     TokenResponse,
 )
+from app.core.auth_rate_limit import AuthRateLimiter
+from app.core.context import get_trace_id
 
 router = APIRouter(tags=["Autenticacion"])
+
+
+def _check_auth_limit(request: Request, identity: str) -> JSONResponse | None:
+    limiter = getattr(request.app.state, "auth_rate_limiter", None)
+    if limiter is None:
+        limiter = AuthRateLimiter()
+        request.app.state.auth_rate_limiter = limiter
+    # No passwords, secrets or raw account identifiers in stored keys.
+    digest = hashlib.sha256(identity.strip().casefold().encode("utf-8")).hexdigest()
+    retry_after = limiter.check(request.url.path + ":" + digest)
+    if not retry_after:
+        return None
+    return JSONResponse(
+        status_code=429,
+        headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"},
+        content={
+            "code": "RATE_LIMITED",
+            "message": "Demasiados intentos. Reintenta mas tarde.",
+            "details": [],
+            "traceId": get_trace_id(),
+        },
+    )
 
 
 def _as_response(token) -> TokenResponse:
@@ -38,6 +65,13 @@ def _as_response(token) -> TokenResponse:
 
 @router.post(
     "/auth/login",
+    responses={
+        429: {
+            "description": (
+                "Limite local por identidad: 10 solicitudes cada 60 segundos; Retry-After."
+            )
+        }
+    },
     response_model=TokenResponse,
     summary="Entrar al dashboard (persona)",
     description=(
@@ -47,13 +81,25 @@ def _as_response(token) -> TokenResponse:
         "reactivar cualquier integrante del mismo equipo."
     ),
 )
-async def login(payload: LoginRequest, auth: AuthDep) -> TokenResponse:
+async def login(
+    payload: LoginRequest, auth: AuthDep, request: Request
+) -> TokenResponse | JSONResponse:
+    blocked = _check_auth_limit(request, payload.email)
+    if blocked is not None:
+        return blocked
     _, token = await auth.login(email=payload.email, password=payload.password)
     return _as_response(token)
 
 
 @router.post(
     "/auth/module-token",
+    responses={
+        429: {
+            "description": (
+                "Limite local por identidad: 10 solicitudes cada 60 segundos; Retry-After."
+            )
+        }
+    },
     response_model=TokenResponse,
     summary="Token de maquina (backend de un modulo)",
     description=(
@@ -62,7 +108,12 @@ async def login(payload: LoginRequest, auth: AuthDep) -> TokenResponse:
         "No hay refresh: cuando el token expira se pide otro."
     ),
 )
-async def module_token(payload: ModuleTokenRequest, auth: AuthDep) -> TokenResponse:
+async def module_token(
+    payload: ModuleTokenRequest, auth: AuthDep, request: Request
+) -> TokenResponse | JSONResponse:
+    blocked = _check_auth_limit(request, payload.module)
+    if blocked is not None:
+        return blocked
     token = await auth.issue_module_token(module_name=payload.module, secret=payload.secret)
     return _as_response(token)
 

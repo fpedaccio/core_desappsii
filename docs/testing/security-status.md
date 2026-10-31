@@ -20,7 +20,7 @@ Los pendientes no se consideran riesgos aceptados automaticamente.
 | Expiracion, issuer y audience | Verificado con tokens firmados de prueba | security-http.md |
 | Aislamiento entre modulos y operaciones administrativas | Verificado en nueve comprobaciones | security-http.md; no equivale a todos los objetos y operaciones |
 | Asignacion de privilegios desde el cuerpo | Verificado en nueve comprobaciones | security-http.md |
-| Intentos fallidos de login | Cuenta sintetica desactivada; login valido posterior 403 | No se observo 429; requisito de rate limiting sigue pendiente de evaluacion |
+| Intentos de autenticacion | Bloqueo de cuenta previamente observado y limitador local 429 verificado en login y module-token | auth-rate-limit.md; contador por identidad y endpoint, por proceso; no acredita proteccion distribuida o integral |
 | CORS | Origen local permitido y externo rechazado en preflight | security-headers.md; alcance limitado a origenes y solicitudes probados |
 | CSP restrictiva y fuentes locales | Verificado en candidato cfa32de y seis escenarios locales | Evidencia hardening-final-check; sin unsafe-inline y sin fuentes externas |
 | Fuentes y metricas | Ambas familias cargadas, barra con altura positiva y sin recursos externos observados | No sustituye revision visual integral o accesibilidad |
