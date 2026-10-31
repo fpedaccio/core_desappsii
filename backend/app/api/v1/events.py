@@ -90,10 +90,12 @@ async def publish_event(
 async def list_events(
     caller: CallerDep,
     event_log_repo: EventLogRepoDep,
-    query: str | None = Query(default=None, description="Busca por tipo o modulo origen"),
-    event_type: str | None = Query(default=None, alias="eventType"),
-    source_module: str | None = Query(default=None, alias="sourceModule"),
-    target_module: str | None = Query(default=None, alias="targetModule"),
+    query: str | None = Query(
+        default=None, pattern=r"^[^\x00]*$", description="Busca por tipo o modulo origen"
+    ),
+    event_type: str | None = Query(default=None, pattern=r"^[^\x00]*$", alias="eventType"),
+    source_module: str | None = Query(default=None, pattern=r"^[^\x00]*$", alias="sourceModule"),
+    target_module: str | None = Query(default=None, pattern=r"^[^\x00]*$", alias="targetModule"),
     status_filter: EventStatus | None = Query(default=None, alias="status"),
     correlation_id: uuid.UUID | None = Query(default=None, alias="correlationId"),
     since: datetime | None = Query(default=None),
