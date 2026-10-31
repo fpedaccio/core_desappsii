@@ -59,6 +59,28 @@ Estos resultados cubren los seis filtros indicados. No acreditan la
 validacion de todos los campos de entrada ni la ausencia general de
 inyecciones.
 
-Queda pendiente repetir el escaneo activo de ZAP sobre esta version y
-revisar sus resultados. Las demas alertas del baseline y del escaneo
-original conservan su estado; esta correccion no las resuelve.
+## Reescaneo activo autenticado
+
+Se repitio el escaneo sobre la API local corregida:
+
+- Ejecucion completada, sin error de ejecucion.
+- Autenticacion y lectura del evento propio verificadas antes y despues.
+- Escaneo activo finalizado al 100 %, con 2.566 solicitudes.
+- Codigo de salida 2: el informe conserva advertencias.
+- La alerta previa de respuesta HTTP 500 ya no aparece en el informe.
+- Persisten tres entradas de alertas bajas y dos informativas.
+
+Evidencia:
+`deploy/.testing/evidence/zap-active-retest-20261031-153016-1ac19c/results.json`
+
+El alcance sigue limitado a ocho operaciones GET importadas y la politica
+API-Minimal, con un tiempo de escaneo acotado. La muestra de 500 mensajes
+no representa la totalidad del trafico. Los complementos de ZAP pueden
+actualizarse durante la ejecucion aunque la imagen este fijada por digest.
+
+La correccion de este defecto queda verificada localmente mediante las
+regresiones, las comprobaciones HTTP y el reescaneo. No equivale a una
+aprobacion general de seguridad ni acredita su despliegue en AWS.
+
+Las otras alertas del escaneo activo y los dos hallazgos medios del
+baseline del frontend mantienen su estado de revision.
