@@ -5,7 +5,7 @@ from pathlib import Path
 import testing_up
 
 # Solo afecta a este proceso. No cambia el bootstrap general.
-testing_up.FRONTEND_REF = "4a2fb0b569297a2fe75aef650780d6e9d39dbcaf"
+testing_up.FRONTEND_REF = "1d8d1b8325767da8926b98325e904d11a6cdfb3d"
 testing_up.BACKEND_IMAGE = "muni-core-backend:e2e"
 testing_up.FRONTEND_IMAGE = "muni-core-frontend:e2e"
 

@@ -146,13 +146,42 @@ class CoreBrowserTests(unittest.TestCase):
 
     def setUp(self):
         self.context = self.browser.new_context(viewport={'width': 1280, 'height': 800})
+        self._qa_csp = []
+        self.context.expose_binding(
+            "qaReportCspViolation",
+            lambda source, entry: self._qa_csp.append(entry),
+        )
+        self.context.add_init_script(
+            "document.addEventListener('securitypolicyviolation', e => {"
+            "window.qaReportCspViolation({"
+            "directive: e.effectiveDirective,"
+            "disposition: e.disposition"
+            "});"
+            "});"
+        )
         self.page = self.context.new_page()
         self.page.set_default_timeout(20000)
-        self.page.goto(BASE)
+        response = self.page.goto(BASE)
+        self.assertIsNotNone(response)
+        policy = response.headers.get('content-security-policy', '')
+        self.assertIn("default-src 'self'", policy)
+        self.assertIn("script-src 'self'", policy)
+        self.assertIn("frame-ancestors 'none'", policy)
+        self.assertEqual(response.headers.get('x-frame-options'), 'DENY')
         expect(self.page.get_by_role('heading', name='Iniciar sesión')).to_be_visible()
 
     def tearDown(self):
-        self.context.close()
+        try:
+            path = Path('/evidence/csp-observations.json')
+            observations = json.loads(path.read_text()) if path.exists() else []
+            observations.append({
+                'test': self._testMethodName,
+                'violations': list(self._qa_csp),
+            })
+            path.write_text(json.dumps(observations, indent=2))
+        finally:
+            self.context.close()
+        self.assertEqual(self._qa_csp, [], 'CSP violations detected')
 
     def ui_login(self, module):
         self.page.get_by_label('Correo electrónico', exact=True).fill(self.emails[module])

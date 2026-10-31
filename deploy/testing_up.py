@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 FRONTEND_URL = "https://github.com/EmilioJOM/DAPP2-frontend.git"
-FRONTEND_REF = "27df1e4636ba1b7df60f23ca14f6b967487c021c"
+FRONTEND_REF = "1d8d1b8325767da8926b98325e904d11a6cdfb3d"
 PROJECT = "muni-core-testing"
 BACKEND_IMAGE = "muni-core-backend:testing"
 FRONTEND_IMAGE = "muni-core-frontend:testing"

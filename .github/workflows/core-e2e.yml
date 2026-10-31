@@ -45,7 +45,7 @@ jobs:
           )
           assert result["backend_ref"] == os.environ["TESTED_SHA"]
           assert result["backend_dirty"] is False
-          assert result["frontend_ref"] == "4a2fb0b569297a2fe75aef650780d6e9d39dbcaf"
+          assert result["frontend_ref"] == "1d8d1b8325767da8926b98325e904d11a6cdfb3d"
           assert result["project"] == "muni-core-testing-e2e"
           assert result["http_port"] == 18083
           assert result["fresh_credentials_and_no_previous_volumes"] is True
@@ -88,7 +88,12 @@ jobs:
               for case in cases
               for tag in ("failure", "error", "skipped")
           )
-          print("Five browser scenarios passed without omissions.")
+          observations = json.loads(
+              (folder / "csp-observations.json").read_text()
+          )
+          assert len(observations) == 5
+          assert all(not item["violations"] for item in observations)
+          print("Five browser scenarios passed without omissions or observed CSP violations.")
           PYCODE
 
       - name: Upload browser reports only
@@ -103,6 +108,7 @@ jobs:
             deploy/.testing/evidence/e2e-*/run.json
             deploy/.testing/evidence/e2e-*/browser-tests.log
             deploy/.testing/evidence/e2e-*/execution.log
+            deploy/.testing/evidence/e2e-*/csp-observations.json
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 14
