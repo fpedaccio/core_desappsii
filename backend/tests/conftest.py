@@ -29,6 +29,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from app.core.auth_rate_limit import AuthRateLimiter
 from app.core.database import Base, get_session
 from app.core.security import hash_opaque_token, hash_password
 from app.main import create_app
@@ -181,6 +182,8 @@ async def seeded(session_factory, broker):
 @pytest_asyncio.fixture
 async def client(session_factory, broker, seeded) -> AsyncIterator[AsyncClient]:
     app = create_app()
+    # This client uses SQLite fixtures, not the global runtime database.
+    app.state.auth_rate_limiter = AuthRateLimiter()
 
     async def override_get_session():
         async with session_factory() as session:

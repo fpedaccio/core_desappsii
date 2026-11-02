@@ -22,6 +22,11 @@ las áreas y no interpreta el contenido de los eventos.
 
 ## Arrancar
 
+Para levantar el sistema completo de testing desde un clon, con Docker, Git y
+Python disponibles: `python3 deploy/testing_up.py` (Windows: `py -3 deploy/testing_up.py`).
+La configuración se genera en un entorno local separado; ver
+[deploy/TESTING.md](deploy/TESTING.md) para requisitos, evidencia y límites.
+
 ```bash
 cd backend && .venv/bin/uvicorn app.main:app --reload
 ```
