@@ -83,6 +83,16 @@ class EventTypeRepository(BaseRepository[EventType]):
     async def get_by_name(self, name: str) -> EventType | None:
         return await self.find_one(name=name.strip())
 
+    async def get_by_name_for_update(self, name: str) -> EventType | None:
+        """Lo bloquea hasta el fin de la transaccion (SELECT ... FOR UPDATE).
+
+        Con If-Match, la comparacion del ETag y la escritura tienen que ser
+        atomicas: si no, dos PUT con el mismo ETag pasan el control y el segundo
+        pisa al primero. En SQLite (tests) FOR UPDATE no aplica y se ignora.
+        """
+        stmt = select(EventType).where(EventType.name == name.strip()).with_for_update()
+        return (await self.session.execute(stmt)).scalars().first()
+
     async def list_ordered(self) -> list[EventType]:
         stmt = select(EventType).order_by(EventType.name)
         return list((await self.session.execute(stmt)).scalars().all())
