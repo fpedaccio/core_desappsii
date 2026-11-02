@@ -58,8 +58,19 @@ deploy/.testing/evidence/shared-auth-tests-20261102T105529Z/
 
 ## Alcance y pendientes
 
-Al registrar este documento no se verifico aun el comportamiento HTTP
-del candidato reconstruido ni una carga de rendimiento con este cambio.
+El candidato 91d8e9416c9229829ba0dad5cfdcca96d97f070c fue reconstruido
+y verificado mediante HTTP real en el entorno local de rendimiento.
+Aprobaron once comprobaciones: diez intentos admitidos y posterior 429
+en ambos endpoints, normalizacion de identidad, independencia entre
+identidades y conservacion de los contadores tras reiniciar la API
+dentro de la ventana vigente.
+
+Evidencia HTTP:
+deploy/.testing/evidence/shared-auth-http-20261102T110746Z/
+
+La comprobacion HTTP uso un proceso. La coordinacion entre cuatro
+procesos se verifico por separado en integracion con PostgreSQL.
+No se ejecuto aun una carga de rendimiento con este cambio.
 
 El advisory lock serializa las comprobaciones de autenticacion.
 No se utiliza en las consultas de historial, dashboard o publicacion.
