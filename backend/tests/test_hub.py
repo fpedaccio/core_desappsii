@@ -199,6 +199,39 @@ async def test_el_reintento_queda_auditado(client, auth, make_envelope):
     assert entries[0]["result"] == "SUCCESS"
 
 
+async def test_la_auditoria_sigue_el_alcance_de_la_dead_letter(client, auth, make_envelope):
+    """Un modulo ajeno no ve la auditoria, igual que no ve el detalle (QA T6, D-01)."""
+    admin = await auth("core")
+    await client.put(
+        "/api/v1/event-types/ticketCreated/schema",
+        json={"jsonSchema": {"type": "object", "required": ["priority"]}},
+        headers=admin,
+    )
+    origen = await auth("atencion-ciudadana")
+    await client.post("/api/v1/events", json=make_envelope(data={}), headers=origen)
+    dead_letter_id = (await client.get("/api/v1/dlq", headers=admin)).json()["items"][0]["id"]
+    await client.post(
+        f"/api/v1/dlq/{dead_letter_id}/discard", json={"reason": "Prueba de alcance"}, headers=admin
+    )
+
+    ajeno = await auth("obras")
+    detalle = await client.get(f"/api/v1/dlq/{dead_letter_id}", headers=ajeno)
+    audit = await client.get(f"/api/v1/dlq/{dead_letter_id}/audit", headers=ajeno)
+    assert detalle.status_code == 404
+    assert audit.status_code == 404
+    assert "core@munitest.com" not in audit.text
+
+    propio = await client.get(f"/api/v1/dlq/{dead_letter_id}/audit", headers=origen)
+    assert propio.status_code == 200
+    assert propio.json()["total"] == 1
+
+
+async def test_la_auditoria_de_una_dead_letter_inexistente_es_404(client, auth):
+    admin = await auth("core")
+    response = await client.get(f"/api/v1/dlq/{uuid.uuid4()}/audit", headers=admin)
+    assert response.status_code == 404
+
+
 async def test_descartar_exige_motivo(client, auth, make_envelope):
     admin = await auth("core")
     await client.put(

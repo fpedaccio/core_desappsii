@@ -81,15 +81,19 @@ async def get_dead_letter(
     dead_letter_id: uuid.UUID, caller: CallerDep, dead_letter_repo: DeadLetterRepoDep
 ) -> DeadLetterDetailResponse:
     dead_letter = await dead_letter_repo.get_with_retries(dead_letter_id)
-    if dead_letter is None:
-        raise NotFoundError(f"No existe la dead letter {dead_letter_id}.")
-
-    if caller.scope and caller.scope not in {
-        dead_letter.source_module,
-        dead_letter.target_module,
-    }:
-        raise NotFoundError(f"No existe la dead letter {dead_letter_id}.")
+    _assert_visible(dead_letter, dead_letter_id, caller.scope)
     return DeadLetterDetailResponse.of_detail(dead_letter)
+
+
+def _assert_visible(dead_letter, dead_letter_id: uuid.UUID, scope: str | None) -> None:
+    """Un modulo solo ve las dead letters que lo involucran, como origen o destino.
+
+    Una ajena responde igual que una inexistente: no se confirma que exista.
+    """
+    if dead_letter is None or (
+        scope and scope not in {dead_letter.source_module, dead_letter.target_module}
+    ):
+        raise NotFoundError(f"No existe la dead letter {dead_letter_id}.")
 
 
 @router.post(
@@ -170,16 +174,19 @@ async def discard_dead_letter(
     response_model=PageResponse[RetryAuditResponse],
     summary="Auditoria de reintentos",
     description=(
-        "Cada intento (automatico o manual) con quien lo hizo, cuando y que resultado dio."
+        "Cada intento (automatico o manual) con quien lo hizo, cuando y que resultado dio. "
+        "Sigue la misma regla que el detalle: un modulo solo ve la de sus dead letters."
     ),
 )
 async def dead_letter_audit(
     dead_letter_id: uuid.UUID,
     caller: CallerDep,
+    dead_letter_repo: DeadLetterRepoDep,
     retry_audit_repo: RetryAuditRepoDep,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=25, ge=1, le=200),
 ) -> PageResponse[RetryAuditResponse]:
+    _assert_visible(await dead_letter_repo.get(dead_letter_id), dead_letter_id, caller.scope)
     result = await retry_audit_repo.search(dead_letter_id=dead_letter_id, page=page, size=size)
     return PageResponse.build(result, RetryAuditResponse.of)
 
