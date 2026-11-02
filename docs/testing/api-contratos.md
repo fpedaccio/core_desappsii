@@ -17,6 +17,7 @@ en [calidad-mutacion.md](calidad-mutacion.md).
 | `docs/testing/api/casos.json` | Id, carpeta, operación, identidad y status esperado de cada caso |
 | `docs/testing/api/generar_coleccion.py` | Genera los tres archivos anteriores desde el OpenAPI de la candidata |
 | `docs/testing/api/contrastar_contrato.py` | Cruza un reporte JSON de newman con el OpenAPI: resultado por caso, cobertura de operaciones y status no declarados. No copia cuerpos ni credenciales |
+| `docs/testing/api/escenarios_amqp.py` | 11 escenarios de ingesta por AMQP y de reintentos de la DLQ contra RabbitMQ y el worker reales, con su propia fixture |
 
 Los status esperados salen del código de la candidata (dependencias de auth,
 guardas de servicios, validaciones de Pydantic) y de las descripciones del
@@ -25,20 +26,27 @@ quedó fallando y se registró como defecto (D-01); no se cambió el esperado.
 
 ## Entorno de ejecución y límites
 
-- macOS sin Docker: no se pudo levantar el entorno E2E oficial (`e2e_up.py`,
-  PostgreSQL + RabbitMQ en contenedores). Se ejecutó la misma revisión con
-  `uvicorn` sobre **SQLite** (`SEED_ON_STARTUP=true`, `RUN_WORKER=false`) y el
-  **RabbitMQ 4.3.4 local** del equipo (vhost `/`); `/health/ready` informó base
-  y broker `up`.
-- Contraseña del seed generada al azar para esta corrida, guardada solo en
-  `deploy/.testing/t6/.env` (ignorado por Git) y pasada a newman como variable.
-- Solo ingreso HTTP. La ingesta por AMQP (`muni.inbox`), los reintentos por
-  `DELIVERY_FAILED` y el reintento exitoso desde la DLQ quedan fuera: necesitan
-  un consumidor que falle a propósito.
-- Las fechas de algunas respuestas salieron sin offset (`createdAt` de la
-  auditoría). Puede ser propio de SQLite: no se registra como defecto hasta
-  repetirlo sobre PostgreSQL.
-- Falta repetir la colección sobre el entorno E2E oficial (ver "Reproducir").
+Se usaron dos entornos sobre macOS. La computadora no tiene Docker, así que
+no se usaron los contenedores de `e2e_up.py`:
+
+- **Stack nativo equivalente al de compose** (corrida 7 y escenarios AMQP).
+  Mismos procesos que `deploy/compose.yaml`: **PostgreSQL 17.10** con el rol
+  limitado `core_app` (como `postgres-init/10-core-app.sh`), `python -m
+  app.seeds`, la API con `uvicorn` y el worker `python -m
+  app.workers.inbox_worker`. Todo sobre **RabbitMQ 4.3.4**, en un vhost
+  exclusivo `qa-t6`. `/health/ready` informó base y broker `up`, y el worker
+  consumía `core.inbox` y `q.dlq`. Respecto del entorno oficial, solo cambia
+  que los procesos no corren en contenedores y que no está el nginx del
+  frontend adelante.
+- **API sola sobre SQLite** (corridas 1 a 6): `SEED_ON_STARTUP=true`, sin
+  worker, contra el mismo RabbitMQ en el vhost `/`.
+
+En los dos casos se usó el código exacto de la candidata (sin diferencias con
+`7b35db2` en `backend/`). La contraseña del seed se generó al azar, se guardó
+solo en `deploy/.testing/` (ignorado por Git) y se pasó como variable.
+
+En SQLite algunas fechas salían sin offset. En PostgreSQL todas traen `Z`
+(corrida 7): era propio de SQLite y no es un defecto.
 
 ## Resultados
 
@@ -50,6 +58,7 @@ quedó fallando y se registró como defecto (D-01); no se cambió el esperado.
 | 4 | **Base vacía** | 155 de 155 | 164 | 496 de 496 | 56 de 56 |
 | 5 | Misma base que 4 | 156 de 158 | 167 | 501 de 505 | 56 de 56 |
 | 6 | Misma base, código con la corrección de D-01 (`51a71dc`) | 158 de 158 | 167 | 505 de 505 | 56 de 56 |
+| 7 | **PostgreSQL + worker** (stack nativo), candidata `7b35db2` | 156 de 158 | 167 | 501 de 505 | 56 de 56 |
 
 - Corrida 1: la única falla fue EV-12. El caso esperaba el cuerpo de error común
   y el Core devuelve a propósito el resultado de ingesta (ver C-03). Se corrigió
@@ -63,6 +72,8 @@ quedó fallando y se registró como defecto (D-01); no se cambió el esperado.
   ([fpedaccio/core_desappsii#14](https://github.com/fpedaccio/core_desappsii/pull/14)).
   DLQ-13 y DLQ-14 pasan con 404 y el resto no cambia. Se conserva la corrida 5
   como evidencia del defecto.
+- Corrida 7: sobre PostgreSQL y con worker da el mismo resultado que sobre
+  SQLite. Las únicas fallas son DLQ-13 y DLQ-14 (D-01).
 
 Cada corrida usa un sufijo distinto (`qa-t6-<run>-a/b/c`), así que se puede
 repetir sobre la misma base.
@@ -75,6 +86,46 @@ mensaje**, aunque A envió el evento válido, su reenvío con el mismo `eventId`
 (EV-02, `200 duplicate:true`) y un evento rechazado por schema (EV-12). La cola
 de C tiene 0, porque se desuscribió antes de publicar, y A no tiene cola porque
 no se suscribió a nada. Por API, EV-03 y EV-22 muestran una sola entrega.
+
+## Ingesta por AMQP y reintentos de la DLQ
+
+`docs/testing/api/escenarios_amqp.py` corre contra el stack nativo (API +
+worker + PostgreSQL + RabbitMQ). Crea los módulos `qa-amqp-<run>-a` y `-b`; B
+se suscribe con `maxAttempts` 2 y el script hace de consumidor de B: confirma
+o rechaza (`reject`, sin reencolar) según el caso. Se ejecutó dos veces con
+fixtures distintas y las dos dieron 11 de 11 PASS. Esta es la segunda:
+
+| Caso | Escenario | Esperado | Observado | Resultado |
+| --- | --- | --- | --- | --- |
+| AMQP-01 | Evento valido publicado en muni.inbox se persiste por el canal AMQP | ingestionChannel AMQP, una entrega a B | `('AMQP', ['qa-amqp-e8fa7d-b'])` | PASS |
+| AMQP-02 | B recibe el mensaje con las cabeceras del Core | x-core-event-id = eventId, target B, attempt 1, mismo data | `{'x-core-event-id': '9d6d12cf-42ff-44e8-83dd-8db7e0520a9f', 'x-core-target-module': 'qa-amqp-e8fa7d-b', 'x-core-attempt': 1}` | PASS |
+| AMQP-03 | Reenvio del mismo eventId por AMQP no genera efectos | 1 evento del tipo, 0 mensajes nuevos en la cola de B | `eventos=1, cola B=0` | PASS |
+| AMQP-04 | Mensaje que no es JSON queda como MALFORMED_MESSAGE | una dead letter MALFORMED_MESSAGE mas | `antes=1, despues=2` | PASS |
+| AMQP-05 | data invalido por AMQP queda REJECTED y en la DLQ | REJECTED, SCHEMA_VIOLATION, sin entregas, cola B vacia | `('REJECTED', 'SCHEMA_VIOLATION', 0, 0)` | PASS |
+| AMQP-06 | OBSERVACION: por AMQP se acepta un sourceModule cualquiera | aceptado (comportamiento actual: no se contrasta con el usuario de la conexion) | `('qa-amqp-e8fa7d-b', 'ROUTED')` | PASS |
+| DLQ-R1 | Tras corregir el schema, el reintento reprocesa y entrega | success, evento con entrega a B, B recibe el evento, auditoria MANUAL SUCCESS | `(200, True, 1, True, [('MANUAL', 'SUCCESS')])` | PASS |
+| DLQ-R2 | Rechazo del consumidor: reintento con backoff y cabeceras | intentos 1 y 2 del mismo eventId; el 2 trae x-core-last-error | `[(1, True, False), (2, True, True)]` | PASS |
+| DLQ-R3 | Agotados los intentos se abre una dead letter DELIVERY_FAILED | dead letter para B; entrega con 2 intentos | `(('qa-amqp-e8fa7d-b', 2), [('DEAD', 2)])` | PASS |
+| DLQ-R4 | Una vez abierta la dead letter no hay mas reentregas | cola B vacia | `cola B=0` | PASS |
+| DLQ-R5 | Reintento manual de DELIVERY_FAILED republica con contador reiniciado | success; B recibe el mismo eventId con attempt 1; dead letter RETRIED | `(True, True, 1, 'RETRIED')` | PASS |
+
+Qué deja probado:
+
+- **Canal AMQP.** La ingesta por `muni.inbox` sigue el mismo pipeline que la
+  HTTP: idempotencia, rechazo por schema a la DLQ y cuerpos que no son JSON
+  como `MALFORMED_MESSAGE`.
+- **Rechazo del consumidor.** Recorre los reintentos con backoff (intento 2 a
+  los 5 s, con `x-core-last-error`) hasta abrir una dead letter
+  `DELIVERY_FAILED`, sin más reentregas.
+- **Reintentos manuales que funcionan.** Para `SCHEMA_VIOLATION`, después de
+  corregir el schema se reprocesa el evento guardado. Para `DELIVERY_FAILED`,
+  se republica con el contador reiniciado y el mismo `x-core-event-id`.
+
+AMQP-06 es una observación, no un defecto declarado. Por AMQP el Core no
+contrasta `sourceModule` con el usuario de la conexión: con las credenciales
+de prueba (`guest`), un mensaje puede declarar cualquier origen. En HTTP el
+mismo intento da 403 (EV-06). Depende de cómo se repartan los usuarios de
+RabbitMQ por módulo, y ya figura entre los temas de coordinación del equipo.
 
 ## Hallazgos
 
@@ -195,8 +246,8 @@ corrida 5.
 Huecos de cobertura que quedan: `PATCH /users/{user_id}` solo tiene casos
 negativos (403, 404), `POST /modules/{module_name}/rotate-secret` solo el
 positivo, `POST /auth/module-token` no tiene un caso 422, y el reintento desde
-la DLQ (individual y en lote) solo tiene casos de permiso y validación: el
-reintento exitoso queda pendiente (ver límites).
+la DLQ en lote solo tiene casos de permiso y validación. El reintento
+individual exitoso lo cubren DLQ-R1 y DLQ-R5 de los escenarios AMQP.
 
 ## Reproducir
 
@@ -220,7 +271,7 @@ Remove-Item Env:CORE_ADMIN_PASSWORD
 py -3 docs/testing/api/contrastar_contrato.py deploy/.testing/openapi-qa.json deploy/.testing/t6/newman.json
 ```
 
-En macOS o Linux, con la API en `http://127.0.0.1:18090` como en esta corrida:
+En macOS o Linux, con la API en `http://127.0.0.1:18090` como en estas corridas:
 
 ```bash
 set -a; . deploy/.testing/t6/.env; set +a
@@ -238,6 +289,20 @@ solo en el valor actual (no se exporta). Después, Run collection.
 en los cuerpos. Queda en `deploy/.testing/` y no se comparte. Para compartir
 se usan la salida de consola de newman (se verificó que no contiene ninguno de
 los 19 valores sensibles de la corrida) y la salida de `contrastar_contrato.py`.
+
+Escenarios AMQP: además de la API hace falta el worker y el acceso AMQP al
+broker. Se ejecutan con el venv del backend (usa `httpx` y `aio-pika`):
+
+```bash
+set -a; . deploy/.testing/t6/.env; set +a
+CORE_ADMIN_PASSWORD="$SEED_INITIAL_PASSWORD" \
+CORE_AMQP_URL=amqp://guest:guest@127.0.0.1:5672/qa-t6 \
+backend/.venv/bin/python docs/testing/api/escenarios_amqp.py
+```
+
+En el entorno de Docker, RabbitMQ no publica el puerto 5672 hacia el host. Ahí
+hay que ejecutar el script dentro de la red de compose o publicar ese puerto
+solo para la prueba.
 
 Para regenerar la colección cuando cambie el contrato, exportar el OpenAPI de
 la nueva candidata (guía de QA, sección 10.1) y ejecutar
