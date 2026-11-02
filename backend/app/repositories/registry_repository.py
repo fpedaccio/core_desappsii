@@ -19,6 +19,40 @@ class ModuleRepository(BaseRepository[ModuleAccount]):
     async def get_by_name(self, name: str) -> ModuleAccount | None:
         return await self.find_one(name=name.strip().lower())
 
+    async def dashboard_registry(self, name: str) -> dict:
+        """Read dashboard registry fields without loading ORM relationships."""
+        module_id = (await self.session.execute(
+            select(ModuleAccount.id).where(
+                ModuleAccount.name == name.strip().lower()
+            )
+        )).scalar_one_or_none()
+        if module_id is None:
+            return {
+                "subscriptions": {"total": 0, "active": 0, "eventTypes": []},
+                "publications": {"declared": []},
+            }
+
+        subscriptions = (await self.session.execute(
+            select(Subscription.active, EventType.name)
+            .join(EventType, EventType.id == Subscription.event_type_id)
+            .where(Subscription.module_id == module_id)
+        )).all()
+        publications = (await self.session.execute(
+            select(Publication.active, EventType.name)
+            .join(EventType, EventType.id == Publication.event_type_id)
+            .where(Publication.module_id == module_id)
+        )).all()
+        return {
+            "subscriptions": {
+                "total": len(subscriptions),
+                "active": sum(1 for active, _ in subscriptions if active),
+                "eventTypes": sorted(name for active, name in subscriptions if active),
+            },
+            "publications": {
+                "declared": sorted(name for active, name in publications if active),
+            },
+        }
+
     async def record_publication(self, name: str, *, published_at: datetime) -> None:
         """Update publication time without loading module relationships.
 
