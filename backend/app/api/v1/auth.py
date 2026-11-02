@@ -27,8 +27,8 @@ from app.api.v1.schemas.dto import (
 )
 from app.core.auth_rate_limit import AuthRateLimiter
 from app.core.config import settings
-from app.core.context import get_trace_id
 from app.core.database import SessionFactory, engine
+from app.core.errors import problem_response
 from app.core.shared_auth_rate_limit import SharedAuthRateLimiter
 
 router = APIRouter(tags=["Autenticacion"])
@@ -51,27 +51,21 @@ async def _check_auth_limit(request: Request, identity: str) -> JSONResponse | N
         result = limiter.check(request.url.path + ":" + digest)
         retry_after = await result if inspect.isawaitable(result) else result
     except (SQLAlchemyError, TimeoutError, OSError, RuntimeError):
-        return JSONResponse(
+        return problem_response(
+            request,
             status_code=503,
+            code="AUTH_RATE_LIMIT_UNAVAILABLE",
+            message="Autenticacion temporalmente no disponible. Reintenta mas tarde.",
             headers={"Retry-After": "5", "Cache-Control": "no-store"},
-            content={
-                "code": "AUTH_RATE_LIMIT_UNAVAILABLE",
-                "message": "Autenticacion temporalmente no disponible. Reintenta mas tarde.",
-                "details": [],
-                "traceId": get_trace_id(),
-            },
         )
     if not retry_after:
         return None
-    return JSONResponse(
+    return problem_response(
+        request,
         status_code=429,
+        code="RATE_LIMITED",
+        message="Demasiados intentos. Reintenta mas tarde.",
         headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"},
-        content={
-            "code": "RATE_LIMITED",
-            "message": "Demasiados intentos. Reintenta mas tarde.",
-            "details": [],
-            "traceId": get_trace_id(),
-        },
     )
 
 
