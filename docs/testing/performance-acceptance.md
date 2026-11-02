@@ -46,8 +46,14 @@ py -3 deploy/performance_up.py
 py -3 deploy/performance_run.py
 ```
 
-La conexion del override al arranque requiere verificar el runtime
-antes de considerar terminado el procedimiento reproducible.
+El arranque habitual fue verificado en el commit 5dcd13ff7a12ebc596266e95fd42bcf5a9af3322.
+La API quedo healthy con el comando de tres procesos; los hashes de
+todos los archivos Python de app coinciden entre el contenedor y el
+repositorio. Bootstrap ready y worker_consumers aprobaron.
+El entorno local quedo con tres procesos. No se repitio la carga.
+
+Evidencia del arranque reproducible:
+deploy/.testing/evidence/performance-bootstrap-20261102T112021Z/
 
 ## Evidencia y limites
 
