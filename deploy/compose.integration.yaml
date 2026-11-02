@@ -1,0 +1,52 @@
+services:
+  integration-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: core_integration
+      POSTGRES_USER: core
+      POSTGRES_PASSWORD: ${IT_ADMIN_PASSWORD:?Use integration_up.py}
+      APP_DB_PASSWORD: ${IT_DB_PASSWORD:?Use integration_up.py}
+    volumes:
+      - integration_pg:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U core -d core_integration"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  integration-rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: integration
+      RABBITMQ_DEFAULT_PASS: ${IT_RABBIT_PASSWORD:?Use integration_up.py}
+      RABBITMQ_DEFAULT_VHOST: core_integration
+    volumes:
+      - integration_rabbit:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+
+  tests:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.integration
+    environment:
+      ENVIRONMENT: testing
+      DATABASE_URL: postgresql+asyncpg://core_app:${IT_DB_PASSWORD:?Use integration_up.py}@integration-postgres:5432/core_integration
+      RABBITMQ_URL: amqp://integration:${IT_RABBIT_PASSWORD:?Use integration_up.py}@integration-rabbitmq:5672/core_integration
+      RUN_REAL_INTEGRATION: "1"
+      RETRY_DELAYS: "5,30,120,600"
+    volumes:
+      - ${IT_EVIDENCE_PATH:?Use integration_up.py}:/evidence
+    depends_on:
+      integration-postgres:
+        condition: service_healthy
+      integration-rabbitmq:
+        condition: service_healthy
+
+volumes:
+  integration_pg:
+  integration_rabbit:

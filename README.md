@@ -20,42 +20,61 @@ las áreas y no interpreta el contenido de los eventos.
 
 ---
 
-## Arrancar
+## Arranque de la candidata integrada en Windows
 
-```bash
-cd backend && .venv/bin/uvicorn app.main:app --reload
-```
+Requisitos: Git, Python 3.12 o superior y Docker con Compose.
+Iniciar Docker Desktop y abrir PowerShell en la ra?z del clon.
 
-- **Swagger: http://localhost:8000/docs**
-- Login: `core@muni.uade.edu.ar` / `Cambiala123` (es el admin, ve todo)
+Ejecutar:
 
-Si la base está vacía:
+    py -3 deploy/integrated_up.py
 
-```bash
-cd backend && .venv/bin/python -m app.seeds
-```
+Abrir http://localhost:18088.
 
-El seed carga los 9 módulos con una cuenta inicial cada uno, y los **73 tipos de
-evento del board de Miro** con sus 71 publicaciones y 78 suscripciones. Es
-idempotente y no rota los secrets ya generados. Para empezar de cero:
-`python -m app.seeds --drop`.
+- Usuario inicial: `core@muni.uade.edu.ar`.
+- Contrase?a: valor de `SEED_INITIAL_PASSWORD` en el archivo privado
+  `deploy/.testing/.env`. Consultarlo localmente con un editor.
+- No adjuntar ese archivo ni capturas de su contenido a informes, chats o Git.
 
-### Dos credenciales, a propósito separadas
+El comando obtiene el frontend fijado por commit, construye las im?genes,
+genera configuraci?n privada y levanta PostgreSQL, RabbitMQ, seed, API,
+worker y frontend. Las contrase?as no se imprimen en consola.
+Una reejecuci?n conserva las credenciales y los datos existentes.
 
-| Credencial | Quién la usa | Para qué |
-|---|---|---|
-| Email + contraseña | Cada integrante de un equipo | Entrar al dashboard |
-| Secret del módulo | El backend del equipo | Publicar eventos |
+Si encuentra configuraci?n incompleta o perteneciente a otro entorno,
+se detiene para revisi?n sin sobrescribirla. No borrar vol?menes ni
+ejecutar el seed con `--drop` para resolver un fallo de arranque.
 
-Están separadas porque se rotan distinto: cambiar la contraseña de alguien no
-toca el backend desplegado, y rotar el secret de máquina no le corta el acceso al
-dashboard a nadie. La auditoría de reintentos registra **a la persona**, no al
-equipo.
+### Comprobar el funcionamiento
 
-Cada equipo arranca con `<modulo>@muni.uade.edu.ar` / `Cambiala123` y desde el
-dashboard crea las cuentas de sus integrantes. Los secrets de máquina se imprimen
-la primera vez; para rotar uno:
-`POST /api/v1/modules/{nombre}/rotate-secret`.
+1. Abrir http://localhost:18088/health/ready y comprobar `status: up`.
+2. Ingresar a la UI y abrir Historial, Cola de fallas y M?tricas.
+3. Para el recorrido automatizado espec?fico de DLQ, ejecutar:
+
+       py -3 deploy/integrated_e2e_run.py
+
+El runner verifica reintento como representante, doble clic, auditor?a
+y aislamiento con actores sint?ticos. No reemplaza las dem?s suites
+ni la prueba de rendimiento con tres procesos.
+
+Para el entorno general de testing, el comando
+`py -3 deploy/testing_up.py` utiliza el puerto 18080.
+Cada entorno debe conservar su propio clon o worktree y su configuraci?n.
+
+Ver [gu?a de testing](deploy/TESTING.md) y
+[versiones, evidencias y pendientes de la candidata](docs/testing/integrated-candidate-20261102.md).
+
+### Tres credenciales independientes
+
+| Credencial | Uso |
+|---|---|
+| Email y contrase?a personal | Ingreso al dashboard |
+| Nombre de m?dulo y secret de m?quina | Obtener un token para la API HTTP |
+| Usuario y contrase?a de RabbitMQ | Conexi?n AMQPS del backend |
+
+No intercambiar estas credenciales. El secret de m?quina se entrega en
+la respuesta administrativa de alta o rotaci?n; Core conserva su hash.
+No imprimir ni registrar secrets, contrase?as o tokens en logs.
 
 ### El worker
 

@@ -1,4 +1,5 @@
 .github/** text eol=lf
 deploy/scripts/* text eol=lf
+deploy/postgres-init/*.sh text eol=lf
 
 *.pdf binary
