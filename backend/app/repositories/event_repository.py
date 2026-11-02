@@ -155,7 +155,8 @@ class EventLogRepository(BaseRepository[EventLog]):
             .order_by(func.count().desc())
             .limit(limit)
         )
-        stmt = self._scoped(stmt, module_scope)
+        if module_scope:
+            stmt = stmt.where(EventLog.source_module == module_scope)
         if since:
             stmt = stmt.where(EventLog.received_at >= since)
         return [
