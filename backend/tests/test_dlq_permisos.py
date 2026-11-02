@@ -124,6 +124,17 @@ async def test_una_dead_letter_inexistente_da_404_al_reintentar(client, auth):
     assert retry.status_code == 404
 
 
+async def test_la_auditoria_de_una_dead_letter_inexistente_da_404(client, auth):
+    """Tomado del PR #14: antes respondia 200 con la pagina vacia."""
+    admin = await auth("core")
+
+    audit = await client.get(
+        "/api/v1/dlq/00000000-0000-4000-8000-000000000000/audit", headers=admin
+    )
+
+    assert audit.status_code == 404
+
+
 async def test_descartar_sigue_siendo_solo_del_admin(client, auth, make_envelope):
     """El alcance de HU-07 es ver y reintentar; descartar no se habilita a los modulos."""
     dead_letter_id = await _dead_letter_por_schema(client, auth, make_envelope)
