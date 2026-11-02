@@ -84,8 +84,162 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
-      - name: Run PyTest
-        run: pytest
+      - name: Run PyTest with line and branch coverage
+        run: python -m pytest --cov=app --cov-branch --cov-report=term-missing --cov-report=json:coverage.json --cov-report=xml:coverage.xml
+
+      - name: Verify business-service coverage thresholds
+        run: python ../deploy/check_coverage.py coverage.json --output coverage-summary.json
+
+      - name: Test deployment quality tooling
+        run: python -m unittest discover -s ../deploy/tests -v
+
+      - name: Upload coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            backend/coverage.json
+            backend/coverage.xml
+            backend/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  testing-bootstrap:
+    name: Backend - Clean testing bootstrap
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PYTHONUNBUFFERED: "1"
+      GIT_TERMINAL_PROMPT: "0"
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Start complete stack from empty testing state
+        run: timeout 840s python3 deploy/testing_up.py --project-name muni-core-testing-ci --port 18082
+
+      - name: Verify reproducible startup evidence
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads(Path("deploy/.testing/bootstrap-result.json").read_text())
+          assert result["backend_ref"] == os.environ["TESTED_SHA"], "Unexpected backend revision"
+          assert result["backend_dirty"] is False, "Tracked/untracked source changed during startup"
+          assert result["fresh_credentials_and_no_previous_volumes"] is True, "State was reused"
+          assert result["project"] == "muni-core-testing-ci", "Unexpected Compose project"
+          assert result["http_port"] == 18082, "Unexpected HTTP port"
+          assert result["ready"] is True and result["worker_consumers"] is True
+          assert 0 < result["seconds"] <= 900, "Startup exceeded 15 minutes"
+          print("Fresh stack, exact commit, API and worker verified.")
+          PY
+
+      - name: Collect container status without secrets
+        if: always()
+        run: |
+          if [ -f deploy/.testing/.env ]; then
+            docker compose --project-name muni-core-testing-ci \
+              --env-file deploy/.testing/.env -f deploy/compose.yaml \
+              ps --all > deploy/.testing/containers.txt
+          fi
+
+      - name: Upload sanitized startup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testing-bootstrap-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            deploy/.testing/bootstrap-result.json
+            deploy/.testing/containers.txt
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop runner-local testing stack
+        if: always()
+        run: |
+          if [ -f deploy/.testing/.env ]; then
+            docker compose --project-name muni-core-testing-ci \
+              --env-file deploy/.testing/.env -f deploy/compose.yaml down
+          fi
+
+  real-integration:
+    name: Backend - PostgreSQL and RabbitMQ integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run integration with real dependencies
+        run: timeout 840s python3 deploy/integration_up.py
+
+      - name: Verify real integration evidence
+        run: |
+          python3 - <<'PYCODE'
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          evidence = Path("deploy/.integration/evidence")
+          result = json.loads((evidence / "run.json").read_text())
+          assert result["test_exit_code"] == 0
+          assert result["backend_ref"] == os.environ["TESTED_SHA"]
+          assert result["backend_dirty"] is False
+          assert result["project"] == "muni-core-testing-integration"
+          cases = list(ET.parse(evidence / "integration.xml").getroot().iter("testcase"))
+          assert len(cases) >= 8, "Missing integration cases"
+          assert all(case.find(tag) is None for case in cases for tag in ("failure", "error", "skipped"))
+          print(f"Real PostgreSQL/RabbitMQ integration: {len(cases)} cases passed.")
+          PYCODE
+
+      - name: Upload integration evidence only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-integration-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            deploy/.integration/evidence/integration.xml
+            deploy/.integration/evidence/run.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop runner-local integration services
+        if: always()
+        run: |
+          if [ -f deploy/.integration/.env ]; then
+            docker compose --project-name muni-core-testing-integration \
+              --env-file deploy/.integration/.env -f deploy/compose.integration.yaml down
+          fi
 
   deploy:
     name: Backend - CD

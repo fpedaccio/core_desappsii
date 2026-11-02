@@ -105,8 +105,10 @@ async def actualizar_zona(
 async def listar_barrios(
     caller: CallerDep,
     service: CatalogServiceDep,
-    zona: str | None = Query(default=None, description="Filtrar por codigo de zona"),
-    q: str | None = Query(default=None, description="Buscar por nombre"),
+    zona: str | None = Query(
+        default=None, pattern=r"^[^\x00]*$", description="Filtrar por codigo de zona"
+    ),
+    q: str | None = Query(default=None, pattern=r"^[^\x00]*$", description="Buscar por nombre"),
     solo_activos: bool = Query(default=False, alias="soloActivos"),
 ) -> list[BarrioResponse]:
     barrios = await service.listar_barrios(zona=zona, texto=q, solo_activos=solo_activos)

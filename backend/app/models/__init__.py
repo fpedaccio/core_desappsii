@@ -5,6 +5,7 @@ completo del modulo.
 """
 
 from app.core.database import Base
+from app.models.auth_rate_limit import AuthRateLimitBucket
 from app.models.catalog import Barrio, ItemDeCatalogo, Zona
 from app.models.events import (
     DeadLetter,
@@ -27,6 +28,7 @@ from app.models.registry import (
 from app.models.users import User
 
 __all__ = [
+    "AuthRateLimitBucket",
     "Barrio",
     "Base",
     "DeadLetter",
