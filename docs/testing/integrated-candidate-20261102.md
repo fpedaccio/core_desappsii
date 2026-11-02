@@ -54,7 +54,6 @@ eventos y auditor?as se conservan como evidencia.
 ## Pendientes
 
 - Versionar un procedimiento reproducible para validar esta combinaci?n.
-- Verificar el doble clic en reintento sobre la candidata integrada.
 - Revisar y, cuando corresponda, repetir la aceptaci?n de rendimiento
   con la configuraci?n de tres procesos sobre la combinaci?n final.
   La carga aprobada anterior no se atribuye a esta nueva combinaci?n.
@@ -63,3 +62,21 @@ eventos y auditor?as se conservan como evidencia.
 - Consolidar ejecuci?n de HU v2, decisiones y defectos pendientes
   con T2/T3/T6/T7 y G4. Las pruebas t?cnicas no cierran esos bloques.
 - Crear el tag de entrega ?nicamente cuando corresponda al cierre acordado.
+
+## Verificaci?n adicional: doble clic
+
+Sobre el mismo c?digo de aplicaci?n, con HEAD documental b56e016,
+aprob? el recorrido de doble clic como representante: una sola solicitud
+POST de reintento y una sola entrada MANUAL en la auditor?a, con el
+email del representante. Tambi?n volvieron a aprobar el reintento,
+la visualizaci?n de la auditor?a y el aislamiento del m?dulo ajeno.
+
+Evidencia local:
+`deploy/.testing/evidence/e2e-20261102-141951-8cb7f2/`.
+
+La suite ejecutada se conserva en
+`deploy/e2e/integrated_dlq_suite.py`.
+Ejecuta un caso con varias comprobaciones, no seis casos.
+Este archivo requiere el runner de navegador con configuraci?n privada
+y red del proyecto integrado; no debe ejecutarse directamente en el host.
+La integraci?n de ese runner en un comando versionado sigue pendiente.
