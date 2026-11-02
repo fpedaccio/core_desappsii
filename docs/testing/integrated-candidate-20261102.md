@@ -135,3 +135,70 @@ y una pausa de un segundo por iteraci?n de tres solicitudes.
 No acredita capacidad de producci?n ni procesamiento de consumidores
 externos. El entorno integrado habitual de 18088 usa otra configuraci?n;
 esta aceptaci?n corresponde espec?ficamente a tres procesos.
+
+## Candidata unificada con cambios del PO
+
+Revisi?n de aplicaci?n validada:
+`63a5221367355b6aa4cfe70261e1cb36e2348506`.
+Frontend sin cambios: `d00f07b71aaa61d27adcb179ec5a3180e9e78874`.
+
+Se incorporaron los commits bc69ca3 y 4fcfe37 de qa/candidate-t8-t3:
+
+- docs/eventos.md distingue el 422 persistido como REJECTED de los errores
+  de validaci?n previos a la persistencia.
+- published.topTypes filtra por source_module en el dashboard del m?dulo,
+  evitando mostrar eventos consumidos como si fueran publicados.
+- Se ampliaron las comprobaciones del dashboard para productor y suscriptor.
+
+Validaci?n posterior al merge:
+
+- Ruff y los 26 casos de tests/test_scope_y_dashboard.py aprobados.
+- Entorno integrado reconstruido: arranque en 75,13 segundos.
+- Runner versionado de DLQ aprobado: reintento como representante,
+  doble clic con un POST y una auditor?a MANUAL, visualizaci?n de auditor?a
+  y aislamiento frente a un m?dulo ajeno.
+- No se presentan las suites completas locales de la revisi?n anterior
+  como repetidas sobre este commit.
+
+### Rendimiento y consistencia de la revisi?n unificada
+
+Entorno local independiente de rendimiento, tres procesos Uvicorn,
+50 usuarios virtuales durante cinco minutos, con smoke previo.
+Mismo escenario y umbrales que las ejecuciones anteriores.
+
+| Endpoint | Solicitudes de carga | Errores | p95 |
+|---|---:|---:|---:|
+| Publicaci?n | 11801 | 0 % | 243,97 ms |
+| Historial | 11801 | 0 % | 93,04 ms |
+| Dashboard | 11801 | 0 % | 271,23 ms |
+
+Los tres endpoints cumplen p95 menor a 500 ms y errores menores al 1 %.
+
+Consulta PostgreSQL de solo lectura: 11810 publicaciones esperadas,
+incluyendo smoke; 11810 eventos persistidos; 11810 eventId distintos;
+total_received de 11810; cero or?genes inesperados.
+
+Fixture: suscripci?n desactivada, publicaci?n eliminada y m?dulo
+desactivado. Eventos y mensajes sint?ticos conservados.
+
+Evidencias locales:
+
+- En C:/core-integration-20261102:
+  deploy/.testing/evidence/dashboard-scope-fix-20261102T181612Z/
+  y deploy/.testing/evidence/e2e-20261102-152209-c3f966/.
+- En C:/core-integrated-performance-20261102:
+  deploy/.testing/evidence/performance-20261102-152340-ae4f8e7e9104/
+  y deploy/.testing/evidence/unified-performance-20261102T182302Z/.
+
+El resultado anterior de 8d275d6 se conserva como evidencia hist?rica.
+Esta secci?n identifica la validaci?n posterior al fix del PO.
+
+### Pendientes de entrega
+
+- CI del commit que se proponga integrar y coordinaci?n del merge.
+- Consolidaci?n de evidencias y decisiones de QA con el equipo.
+- Actualizar el an?lisis G6 para incluir los commits posteriores al bundle
+  inicial; consultar secret-history-review-20261102.md.
+- Preparar el tag despu?s del cierre acordado.
+
+No se modific? AWS ni se acredita capacidad de producci?n.
