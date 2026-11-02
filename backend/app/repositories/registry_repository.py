@@ -19,6 +19,19 @@ class ModuleRepository(BaseRepository[ModuleAccount]):
     async def get_by_name(self, name: str) -> ModuleAccount | None:
         return await self.find_one(name=name.strip().lower())
 
+    async def record_publication(self, name: str, *, published_at: datetime) -> None:
+        """Update publication time without loading module relationships.
+
+        The caller owns the transaction. Unknown modules remain a no-op.
+        """
+        stmt = (
+            update(ModuleAccount)
+            .where(ModuleAccount.name == name.strip().lower())
+            .values(last_publish_at=published_at)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.execute(stmt)
+
     async def list_ordered(self) -> list[ModuleAccount]:
         stmt = select(ModuleAccount).order_by(ModuleAccount.name)
         return list((await self.session.execute(stmt)).scalars().unique().all())
