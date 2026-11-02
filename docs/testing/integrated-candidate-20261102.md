@@ -54,9 +54,6 @@ eventos y auditor?as se conservan como evidencia.
 ## Pendientes
 
 - Versionar un procedimiento reproducible para validar esta combinaci?n.
-- Revisar y, cuando corresponda, repetir la aceptaci?n de rendimiento
-  con la configuraci?n de tres procesos sobre la combinaci?n final.
-  La carga aprobada anterior no se atribuye a esta nueva combinaci?n.
 - Compartir la candidata y sus evidencias con QA, coordinar cambios
   posteriores y verificar CI del commit que se proponga integrar.
 - Consolidar ejecuci?n de HU v2, decisiones y defectos pendientes
@@ -100,3 +97,41 @@ credenciales. No publicar ni adjuntar `deploy/.testing/.env`.
 
 Estos comandos cubren arranque y el recorrido espec?fico de DLQ.
 La aceptaci?n de rendimiento y el cierre global de QA son independientes.
+
+## Rendimiento de la candidata integrada: aprobado
+
+Backend: `8d275d667ebb3a8cf418204a8521f39c1e7d78a6`.
+Frontend: `d00f07b71aaa61d27adcb179ec5a3180e9e78874`.
+
+Entorno Docker local independiente:
+`muni-core-testing-integrated-performance`, puerto 18089,
+tres procesos Uvicorn. Carga de 50 usuarios virtuales durante cinco
+minutos, con smoke previo y los umbrales originales sin cambios.
+
+| Endpoint | Solicitudes de carga | Errores | p95 |
+|---|---:|---:|---:|
+| Publicaci?n | 12130 | 0 % | 268,59 ms |
+| Historial | 12130 | 0 % | 95,42 ms |
+| Dashboard | 12130 | 0 % | 252,87 ms |
+
+Los tres cumplen p95 menor a 500 ms y errores menores al 1 %.
+
+Consistencia verificada por consulta PostgreSQL de solo lectura:
+12140 publicaciones esperadas, incluyendo smoke; 12140 eventos
+persistidos; 12140 eventId distintos; contador total_received de 12140.
+Sin eventos del tipo sint?tico con otro origen.
+
+La suscripci?n sint?tica qued? desactivada, la publicaci?n eliminada
+y el m?dulo desactivado. Los eventos y mensajes sint?ticos se conservan.
+
+Evidencia local en el worktree `C:/core-integrated-performance-20261102`:
+`deploy/.testing/evidence/performance-20261102-143920-1249b071fcb9/`.
+Incluye results.json y consistency-verification.json.
+Las invocaciones adaptadas de arranque y carga est?n en:
+`deploy/.testing/evidence/integrated-performance-20261102T173826Z/`.
+
+Alcance: escenario local documentado, con un token de m?dulo compartido
+y una pausa de un segundo por iteraci?n de tres solicitudes.
+No acredita capacidad de producci?n ni procesamiento de consumidores
+externos. El entorno integrado habitual de 18088 usa otra configuraci?n;
+esta aceptaci?n corresponde espec?ficamente a tres procesos.
