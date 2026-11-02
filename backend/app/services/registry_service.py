@@ -201,7 +201,8 @@ class RegistryService:
 
         Con `if_match` (encabezado If-Match), el cambio solo se aplica si el tipo
         no cambio desde que el cliente lo leyo; si cambio, 412 y no se toca nada.
-        Sin `if_match` se comporta como siempre (los modulos que ya lo usan no se rompen).
+        Sin `if_match` se comporta como siempre (los modulos que ya lo usan no se rompen),
+        pero sin proteccion contra actualizaciones concurrentes: gana la ultima escritura.
         """
         if if_match is None:
             event_type = await self.get_event_type(name)

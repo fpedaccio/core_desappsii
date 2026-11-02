@@ -225,8 +225,10 @@ async def declare_event_type(
         "**Solo el dueño del tipo** (o el administrador): el schema decide que se "
         "acepta y que se va a la DLQ para todos los que publican ese evento.\n\n"
         "**Concurrencia:** mandar `If-Match` con el `ETag` del GET. Si otro cambio el "
-        "tipo en el medio, responde 412 y no aplica nada. Sin `If-Match` se aplica igual "
-        "(compatibilidad). La respuesta trae el `ETag` nuevo."
+        "tipo en el medio, responde 412 y no aplica nada. La respuesta trae el `ETag` nuevo.\n\n"
+        "**Sin `If-Match` no hay proteccion contra actualizaciones concurrentes:** el "
+        "cambio se aplica igual, por compatibilidad con los clientes actuales, y gana la "
+        "ultima escritura."
     ),
     responses=PRECONDITION_FAILED_DOC,
 )

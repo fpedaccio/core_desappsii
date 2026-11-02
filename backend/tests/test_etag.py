@@ -135,6 +135,9 @@ async def test_el_412_figura_en_el_openapi(client):
     put = spec["paths"]["/api/v1/event-types/{name}/schema"]["put"]
     assert "412" in put["responses"]
     assert any(p["name"] == "If-Match" and p["in"] == "header" for p in put["parameters"])
+    # Acordado con el grupo: documentar que sin If-Match no hay proteccion.
+    aviso = "Sin `If-Match` no hay proteccion contra actualizaciones concurrentes"
+    assert aviso in put["description"]
 
 
 async def test_if_match_admite_varios_etags_y_compara_fuerte():
