@@ -110,30 +110,36 @@ jobs:
           exit "$status"
 
       - name: Verify the evidence carries no credentials
+        id: leaks
         if: always()
         run: |
           python3 - <<'PY'
           import re
           from pathlib import Path
 
+          # Only the secret entries: the .env also holds ports, URLs and image
+          # names that legitimately appear in the evidence.
+          secret_keys = {"POSTGRES_PASSWORD", "APP_DB_PASSWORD", "RABBITMQ_PASSWORD", "SEED_INITIAL_PASSWORD"}
           env = Path("deploy/.testing/.env")
           secrets = [
-              line.split("=", 1)[1]
-              for line in (env.read_text().splitlines() if env.exists() else [])
-              if "=" in line and line.split("=", 1)[1]
+              value.strip().strip('"')
+              for key, _, value in (line.partition("=") for line in (env.read_text().splitlines() if env.exists() else []))
+              if key in secret_keys and value.strip()
           ]
+          assert len(secrets) == len(secret_keys), "Could not read the secret entries to check against"
           jwt = re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")
           leaks = []
           for path in sorted(Path("deploy/.testing/api-evidence").glob("*")):
               text = path.read_text(errors="replace")
-              if jwt.search(text) or any(secret in text for secret in secrets if len(secret) >= 8):
+              if jwt.search(text) or "-----BEGIN" in text or any(secret in text for secret in secrets):
                   leaks.append(path.name)
           assert not leaks, f"Evidence with credentials: {leaks}"
           print("No credentials in the shareable evidence.")
           PY
 
       - name: Upload sanitized evidence
-        if: always()
+        # Never publish evidence that failed the credentials check.
+        if: always() && steps.leaks.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: api-contracts-${{ github.run_id }}-${{ github.run_attempt }}
