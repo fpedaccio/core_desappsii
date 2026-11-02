@@ -18,7 +18,7 @@ jobs:
       PYTHONUNBUFFERED: "1"
       GIT_TERMINAL_PROMPT: "0"
       TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      PROJECT: muni-core-api-ci
+      PROJECT: muni-core-testing-api-ci
       HTTP_PORT: "18084"
       RUNS: "3"
 
