@@ -35,8 +35,19 @@ deploy/compose.performance.yaml conserva el comando probado.
 Es un override para combinar con compose.yaml mediante el bootstrap
 aislado, sus variables y su proyecto de rendimiento. No debe usarse
 solo ni aplicarse automaticamente a otros ambientes.
-Los runners aun requieren incorporar este override para que el
-arranque habitual reproduzca la configuracion de tres procesos.
+performance_up.py incorpora el override exclusivamente al proyecto de
+rendimiento. performance_run.py exige el comando de tres procesos y
+registra configured_api_workers=3; rechaza una configuracion distinta.
+
+Procedimiento habitual desde la raiz del repositorio:
+
+```powershell
+py -3 deploy/performance_up.py
+py -3 deploy/performance_run.py
+```
+
+La conexion del override al arranque requiere verificar el runtime
+antes de considerar terminado el procedimiento reproducible.
 
 ## Evidencia y limites
 

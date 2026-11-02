@@ -4,13 +4,13 @@
 import datetime
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 import uuid
+from pathlib import Path
 
 from testing_up import Bootstrap, read_env
 
@@ -46,6 +46,17 @@ def main():
     )
     if app_diff:
         raise RuntimeError("Runtime application source differs from the tested base")
+
+    # Refuse a run that does not use the accepted process configuration.
+    api_runtime = json.loads(subprocess.check_output(
+        ["docker", "inspect", PROJECT + "-api-1"], text=True,
+    ))[0]
+    expected_command = [
+        "uvicorn", "app.main:app", "--host", "0.0.0.0",
+        "--port", "8000", "--workers", "3",
+    ]
+    if api_runtime["Config"]["Cmd"] != expected_command:
+        raise RuntimeError("Performance requires exactly three API workers")
 
     containers = {}
     for service in ("api", "worker", "postgres", "rabbitmq", "frontend"):
@@ -88,6 +99,7 @@ def main():
         "event_type": event_type,
         "containers": containers,
         "k6_image": IMAGE,
+        "configured_api_workers": 3,
         "configured_vus": 50,
         "configured_duration_seconds": 300,
         "shared_module_identity": True,
@@ -125,7 +137,11 @@ def main():
             "--network", PROJECT + "_default",
             "-e", "PERF_MODE=" + mode,
             "--mount", f"type=bind,source={config_path},target=/private/config.json,readonly",
-            "--mount", f"type=bind,source={deploy / 'performance/scenario.js'},target=/scenario.js,readonly",
+            "--mount",
+            (
+                f"type=bind,source={deploy / 'performance/scenario.js'},"
+                "target=/scenario.js,readonly"
+            ),
             "--mount", f"type=bind,source={destination},target=/evidence",
             IMAGE, "run", "/scenario.js",
         ]
