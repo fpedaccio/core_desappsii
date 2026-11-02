@@ -80,3 +80,23 @@ Ejecuta un caso con varias comprobaciones, no seis casos.
 Este archivo requiere el runner de navegador con configuraci?n privada
 y red del proyecto integrado; no debe ejecutarse directamente en el host.
 La integraci?n de ese runner en un comando versionado sigue pendiente.
+
+## Comandos versionados de la candidata
+
+Desde la ra?z del repositorio, en Windows:
+
+    py -3 deploy/integrated_up.py
+    py -3 deploy/integrated_e2e_run.py
+
+El primero construye y levanta el proyecto local
+`muni-core-testing-integrated` en el puerto 18088, usando el frontend
+fijado en `testing_up.py`. El segundo ejecuta ?nicamente el caso
+espec?fico de DLQ con doble clic, auditor?a y aislamiento.
+No sustituye las suites de backend, integraci?n ni los seis E2E generales.
+
+El runner comprueba la configuraci?n de arranque, las versiones y los
+contenedores; conserva informes y elimina su archivo temporal de
+credenciales. No publicar ni adjuntar `deploy/.testing/.env`.
+
+Estos comandos cubren arranque y el recorrido espec?fico de DLQ.
+La aceptaci?n de rendimiento y el cierre global de QA son independientes.
