@@ -21,7 +21,7 @@ BACKEND = subprocess.check_output(
     cwd=Path(__file__).resolve().parent.parent,
     text=True,
 ).strip()
-FRONTEND = "6353a6dfd3613d17ade5564b96b7e09dfec70573"
+FRONTEND = "d00f07b71aaa61d27adcb179ec5a3180e9e78874"
 BASE = "http://127.0.0.1:18087/api/v1"
 
 

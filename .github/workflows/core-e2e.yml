@@ -45,7 +45,7 @@ jobs:
           )
           assert result["backend_ref"] == os.environ["TESTED_SHA"]
           assert result["backend_dirty"] is False
-          assert result["frontend_ref"] == "6353a6dfd3613d17ade5564b96b7e09dfec70573"
+          assert result["frontend_ref"] == "d00f07b71aaa61d27adcb179ec5a3180e9e78874"
           assert result["project"] == "muni-core-testing-e2e"
           assert result["http_port"] == 18083
           assert result["fresh_credentials_and_no_previous_volumes"] is True
