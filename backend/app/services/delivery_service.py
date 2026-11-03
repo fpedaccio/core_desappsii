@@ -56,6 +56,7 @@ from app.services.event_hub_service import (
     REASON_DELIVERY_FAILED,
     REASON_MALFORMED_MESSAGE,
     REASON_SCHEMA_VIOLATION,
+    REASON_SOURCE_UNVERIFIED,
     EventHubService,
 )
 from app.services.retry_policy import RetryPolicy, default_retry_policy
@@ -280,6 +281,14 @@ class DeliveryService:
                 "Un mensaje malformado no se puede reintentar: no tiene un sobre "
                 "valido. Revisalo, corregilo en el modulo origen y descartalo con "
                 "un motivo."
+            )
+        if dead_letter.reason_code == REASON_SOURCE_UNVERIFIED:
+            # Reintentarlo seria aceptar el evento con el origen que no se pudo
+            # comprobar: es exactamente lo que el rechazo evita.
+            raise ConflictError(
+                "Un evento rechazado por identidad no se reintenta: el modulo que "
+                "corresponde tiene que volver a publicarlo con su usuario AMQP. "
+                "Descartalo con un motivo."
             )
 
         if dead_letter.reason_code in CONFIG_REASONS:
