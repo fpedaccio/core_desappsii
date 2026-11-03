@@ -134,6 +134,13 @@ class ConflictError(AppError):
     code = "CONFLICT"
 
 
+class PreconditionFailedError(AppError):
+    """If-Match desactualizado: otro cliente cambio el recurso despues de leerlo."""
+
+    status_code = status.HTTP_412_PRECONDITION_FAILED
+    code = "PRECONDITION_FAILED"
+
+
 class ValidationError(AppError):
     status_code = 422
     code = "VALIDATION_ERROR"
