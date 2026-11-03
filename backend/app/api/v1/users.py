@@ -11,10 +11,14 @@ import uuid
 from fastapi import APIRouter, status
 
 from app.api.deps import CallerDep, UserServiceDep
-from app.api.v1.schemas.common import MessageResponse
+from app.api.v1.schemas.common import MessageResponse, problem_responses
 from app.api.v1.schemas.dto import PasswordUpdate, UserCreate, UserResponse, UserUpdate
 
-router = APIRouter(prefix="/users", tags=["Cuentas del dashboard"])
+router = APIRouter(
+    prefix="/users",
+    tags=["Cuentas del dashboard"],
+    responses=problem_responses(401),
+)
 
 
 @router.get(
@@ -32,6 +36,7 @@ async def list_users(caller: CallerDep, service: UserServiceDep) -> list[UserRes
     "",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=problem_responses(403, 404, 409),
     summary="Crear una cuenta",
     description=(
         "Da de alta a un integrante en tu equipo. Cualquier integrante puede "
@@ -55,6 +60,7 @@ async def create_user(
 @router.patch(
     "/{user_id}",
     response_model=UserResponse,
+    responses=problem_responses(403, 404, 409),
     summary="Editar o desactivar una cuenta",
     description=(
         "No se puede desactivar la unica cuenta activa de un equipo: quedaria sin "
@@ -80,6 +86,7 @@ async def update_user(
 @router.put(
     "/{user_id}/password",
     response_model=MessageResponse,
+    responses=problem_responses(403, 404),
     summary="Cambiar la contrasena",
     description="Al menos 8 caracteres, combinando letras y numeros.",
 )
@@ -101,6 +108,7 @@ async def set_password(
 @router.delete(
     "/{user_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses=problem_responses(403, 404, 409),
     summary="Eliminar una cuenta",
     description="No se puede eliminar la unica cuenta activa de un equipo.",
 )

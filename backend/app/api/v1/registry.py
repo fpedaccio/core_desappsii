@@ -12,7 +12,7 @@ import uuid
 from fastapi import APIRouter, Header, Query, Response, status
 
 from app.api.deps import AdminDep, AuthDep, CallerDep, RegistryDep, StatsDep
-from app.api.v1.schemas.common import MessageResponse, PageResponse
+from app.api.v1.schemas.common import MessageResponse, PageResponse, problem_responses
 from app.api.v1.schemas.dto import (
     EventTypeCreate,
     EventTypeMapEntry,
@@ -30,7 +30,17 @@ from app.api.v1.schemas.dto import (
 )
 from app.core.etag import event_type_etag
 
-router = APIRouter(tags=["Registry"])
+router = APIRouter(tags=["Registry"], responses=problem_responses(401))
+
+ETAG_HEADER_DOC = {
+    "ETag": {
+        "description": (
+            "ETag fuerte entre comillas que identifica la version actual del tipo "
+            "de evento. Enviarlo en `If-Match` al actualizar el schema."
+        ),
+        "schema": {"type": "string"},
+    }
+}
 
 PRECONDITION_FAILED_DOC = {
     412: {
@@ -38,7 +48,11 @@ PRECONDITION_FAILED_DOC = {
             "If-Match desactualizado: el tipo cambio despues de leerlo. No se aplico "
             "nada; hay que volver a pedirlo y reintentar con el ETag nuevo."
         ),
-        "content": {"application/problem+json": {}},
+        "content": {
+            "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/ProblemDetails"}
+            }
+        },
     }
 }
 
@@ -50,7 +64,12 @@ PRECONDITION_FAILED_DOC = {
     "/modules",
     response_model=list[ModuleResponse],
     summary="Listar modulos",
-    description="Los 9 modulos de la plataforma, con su cola y su cantidad de suscripciones.",
+    description=(
+        "Los modulos registrados en la plataforma, con su cola y su cantidad de "
+        "suscripciones. Este directorio es visible para cualquier modulo "
+        "autenticado (sin exponer secrets) para facilitar el descubrimiento "
+        "de integraciones."
+    ),
 )
 async def list_modules(caller: CallerDep, registry: RegistryDep) -> list[ModuleResponse]:
     return [ModuleResponse.of(m) for m in await registry.list_modules()]
@@ -60,6 +79,7 @@ async def list_modules(caller: CallerDep, registry: RegistryDep) -> list[ModuleR
     "/modules",
     response_model=SecretResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=problem_responses(403, 409),
     summary="Dar de alta un modulo",
     description=(
         "Solo el administrador. Devuelve el **secret de maquina** en claro una "
@@ -85,10 +105,14 @@ async def create_module(
 @router.patch(
     "/modules/{module_name}",
     response_model=ModuleResponse,
+    responses=problem_responses(403, 404),
     summary="Editar un modulo",
     description=(
-        "Solo el administrador. Dar de baja un modulo deja de entregarle eventos "
-        "sin borrar sus suscripciones: quedan declaradas para cuando vuelva."
+        "Solo el administrador. Dar de baja un modulo (`active: false`) deja de "
+        "entregarle eventos nuevos sin borrar sus suscripciones y bloquea en el "
+        "acto nuevas emisiones en `/auth/login` y `/auth/module-token`. Los JWT "
+        "ya emitidos son stateless y mantienen validez residual hasta vencer "
+        "su `exp`."
     ),
 )
 async def update_module(
@@ -108,10 +132,14 @@ async def update_module(
 @router.post(
     "/modules/{module_name}/rotate-secret",
     response_model=SecretResponse,
+    responses=problem_responses(403, 404),
     summary="Rotar el secret de maquina de un modulo",
     description=(
-        "Solo el administrador. El secret anterior deja de servir en el acto, asi "
-        "que el equipo tiene que actualizar la config de su backend.\n\n"
+        "Solo el administrador. El secret anterior deja de emitir tokens nuevos "
+        "en `/auth/module-token` en el acto, asi que el equipo tiene que "
+        "actualizar la config de su backend. Los JWT que se hubieran emitido "
+        "antes de rotar son stateless y siguen siendo validos hasta agotar su "
+        "ventana (`expiresIn`).\n\n"
         "**No afecta el acceso de las personas al dashboard**: para eso estan sus "
         "cuentas."
     ),
@@ -132,7 +160,8 @@ async def rotate_secret(
     response_model=PageResponse[EventTypeResponse],
     summary="Listar tipos de evento",
     description=(
-        "Todos los tipos que circulan por el hub. Los marcados `discovered` "
+        "Catalogo compartido de todos los tipos de evento que circulan por el "
+        "hub, visible para cualquier modulo autenticado. Los marcados `discovered` "
         "aparecieron solos al ser publicados sin que nadie los declarara."
     ),
 )
@@ -170,6 +199,10 @@ async def event_type_map(caller: CallerDep, stats: StatsDep) -> list[EventTypeMa
 @router.get(
     "/event-types/{name}",
     response_model=EventTypeResponse,
+    responses={
+        200: {"headers": ETAG_HEADER_DOC},
+        **problem_responses(404),
+    },
     summary="Ver un tipo de evento",
     description=(
         "Devuelve el encabezado `ETag` con la version editable del tipo. Para cambiar "
@@ -188,9 +221,13 @@ async def get_event_type(
     "/event-types",
     response_model=EventTypeResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=problem_responses(403),
     summary="Declarar un tipo de evento",
     description=(
         "Registra un tipo con su descripcion y, opcionalmente, su JSON Schema.\n\n"
+        "**Operacion idempotente:** si el modulo dueño vuelve a declarar un tipo "
+        "que ya existe, actualiza su definicion y responde `201` conservando el "
+        "mismo `id`.\n\n"
         "**El schema es opcional.** Sin schema el evento pasa sin que le miren el "
         "`data` (pasamanos puro). Con schema se valida la estructura del payload y "
         "lo que no cumple va a la DLQ con el detalle del campo.\n\n"
@@ -230,7 +267,11 @@ async def declare_event_type(
         "cambio se aplica igual, por compatibilidad con los clientes actuales, y gana la "
         "ultima escritura."
     ),
-    responses=PRECONDITION_FAILED_DOC,
+    responses={
+        200: {"headers": ETAG_HEADER_DOC},
+        **problem_responses(403, 404),
+        **PRECONDITION_FAILED_DOC,
+    },
 )
 async def set_schema(
     name: str,
@@ -279,10 +320,13 @@ async def list_subscriptions(
     "/subscriptions",
     response_model=SubscriptionResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=problem_responses(403),
     summary="Suscribirse a un tipo de evento",
     description=(
         "El modulo autenticado empieza a recibir ese tipo en su cola. La cola y su "
         "binding se declaran en el broker en el acto.\n\n"
+        "**Operacion idempotente:** volver a suscribirse al mismo `eventType` "
+        "actualiza la suscripcion existente y responde `201` con el mismo `id`.\n\n"
         "Se puede suscribir a un tipo que todavia nadie publico: cuando llegue el "
         "primero, ya tiene destino."
     ),
@@ -303,6 +347,7 @@ async def subscribe(
 @router.post(
     "/subscriptions/{subscription_id}/toggle",
     response_model=SubscriptionResponse,
+    responses=problem_responses(403, 404),
     summary="Pausar o reactivar una suscripcion",
     description=(
         "Pausar deja de entregar sin borrar la suscripcion. Util cuando un modulo "
@@ -327,6 +372,7 @@ async def toggle_subscription(
 @router.delete(
     "/subscriptions/{subscription_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses=problem_responses(403, 404),
     summary="Cancelar una suscripcion",
 )
 async def unsubscribe(subscription_id: uuid.UUID, caller: CallerDep, registry: RegistryDep) -> None:
@@ -342,6 +388,10 @@ async def unsubscribe(subscription_id: uuid.UUID, caller: CallerDep, registry: R
     "/publications",
     response_model=list[PublicationResponse],
     summary="Listar publicaciones declaradas",
+    description=(
+        "Catalogo compartido de las declaraciones de publicacion de todos los "
+        "modulos, visible para cualquier modulo autenticado."
+    ),
 )
 async def list_publications(caller: CallerDep, registry: RegistryDep) -> list[PublicationResponse]:
     return [PublicationResponse.of(p) for p in await registry.list_publications()]
@@ -351,11 +401,14 @@ async def list_publications(caller: CallerDep, registry: RegistryDep) -> list[Pu
     "/publications",
     response_model=PublicationResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=problem_responses(403),
     summary="Declarar que publicas un tipo de evento",
     description=(
         "Es **documentacion, no un permiso**: publicar un evento no declarado "
         "funciona igual. Existe para que el mapa de integracion pueda mostrar quien "
-        "manda que, y para detectar los eventos que nadie consume."
+        "manda que, y para detectar los eventos que nadie consume.\n\n"
+        "**Operacion idempotente:** redeclarar la misma publicacion responde `201` "
+        "conservando el mismo `id`."
     ),
 )
 async def declare_publication(
@@ -373,6 +426,7 @@ async def declare_publication(
 @router.delete(
     "/publications/{publication_id}",
     status_code=status.HTTP_204_NO_CONTENT,
+    responses=problem_responses(403, 404),
     summary="Quitar una publicacion declarada",
 )
 async def remove_publication(
@@ -402,6 +456,7 @@ async def get_topology(caller: CallerDep, registry: RegistryDep) -> TopologyResp
 @router.post(
     "/topology/apply",
     response_model=MessageResponse,
+    responses=problem_responses(403),
     summary="Aplicar la topologia en el broker",
     description=(
         "Solo el administrador. Es idempotente. Sirve cuando el broker estuvo caido "
