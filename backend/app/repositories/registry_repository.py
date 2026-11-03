@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.orm import joinedload
 
 from app.models.registry import EventType, ModuleAccount, Publication, Subscription
@@ -18,6 +18,53 @@ class ModuleRepository(BaseRepository[ModuleAccount]):
 
     async def get_by_name(self, name: str) -> ModuleAccount | None:
         return await self.find_one(name=name.strip().lower())
+
+    async def dashboard_registry(self, name: str) -> dict:
+        """Read dashboard registry fields without loading ORM relationships."""
+        module_id = (await self.session.execute(
+            select(ModuleAccount.id).where(
+                ModuleAccount.name == name.strip().lower()
+            )
+        )).scalar_one_or_none()
+        if module_id is None:
+            return {
+                "subscriptions": {"total": 0, "active": 0, "eventTypes": []},
+                "publications": {"declared": []},
+            }
+
+        subscriptions = (await self.session.execute(
+            select(Subscription.active, EventType.name)
+            .join(EventType, EventType.id == Subscription.event_type_id)
+            .where(Subscription.module_id == module_id)
+        )).all()
+        publications = (await self.session.execute(
+            select(Publication.active, EventType.name)
+            .join(EventType, EventType.id == Publication.event_type_id)
+            .where(Publication.module_id == module_id)
+        )).all()
+        return {
+            "subscriptions": {
+                "total": len(subscriptions),
+                "active": sum(1 for active, _ in subscriptions if active),
+                "eventTypes": sorted(name for active, name in subscriptions if active),
+            },
+            "publications": {
+                "declared": sorted(name for active, name in publications if active),
+            },
+        }
+
+    async def record_publication(self, name: str, *, published_at: datetime) -> None:
+        """Update publication time without loading module relationships.
+
+        The caller owns the transaction. Unknown modules remain a no-op.
+        """
+        stmt = (
+            update(ModuleAccount)
+            .where(ModuleAccount.name == name.strip().lower())
+            .values(last_publish_at=published_at)
+            .execution_options(synchronize_session=False)
+        )
+        await self.session.execute(stmt)
 
     async def list_ordered(self) -> list[ModuleAccount]:
         stmt = select(ModuleAccount).order_by(ModuleAccount.name)
@@ -35,6 +82,16 @@ class EventTypeRepository(BaseRepository[EventType]):
 
     async def get_by_name(self, name: str) -> EventType | None:
         return await self.find_one(name=name.strip())
+
+    async def get_by_name_for_update(self, name: str) -> EventType | None:
+        """Lo bloquea hasta el fin de la transaccion (SELECT ... FOR UPDATE).
+
+        Con If-Match, la comparacion del ETag y la escritura tienen que ser
+        atomicas: si no, dos PUT con el mismo ETag pasan el control y el segundo
+        pisa al primero. En SQLite (tests) FOR UPDATE no aplica y se ignora.
+        """
+        stmt = select(EventType).where(EventType.name == name.strip()).with_for_update()
+        return (await self.session.execute(stmt)).scalars().first()
 
     async def list_ordered(self) -> list[EventType]:
         stmt = select(EventType).order_by(EventType.name)
@@ -72,10 +129,7 @@ class EventTypeRepository(BaseRepository[EventType]):
         """
         existing = await self.get_by_name(name)
         if existing is not None:
-            existing.last_seen_at = seen_at
-            existing.total_received = (existing.total_received or 0) + 1
-            if existing.first_seen_at is None:
-                existing.first_seen_at = seen_at
+            # Existing counters are updated atomically after routing.
             return existing, False
 
         event_type = EventType(
@@ -91,6 +145,41 @@ class EventTypeRepository(BaseRepository[EventType]):
         self.add(event_type)
         await self.flush()
         return event_type, True
+
+
+    async def record_received(self, name: str, *, seen_at: datetime) -> None:
+        """Increment in SQL after routing, in the same transaction as the event."""
+        statement = (
+            update(EventType)
+            .where(EventType.name == name.strip())
+            .values(
+                total_received=func.coalesce(EventType.total_received, 0) + 1,
+                first_seen_at=case(
+                    (
+                        or_(
+                            EventType.first_seen_at.is_(None),
+                            EventType.first_seen_at > seen_at,
+                        ),
+                        seen_at,
+                    ),
+                    else_=EventType.first_seen_at,
+                ),
+                last_seen_at=case(
+                    (
+                        or_(
+                            EventType.last_seen_at.is_(None),
+                            EventType.last_seen_at < seen_at,
+                        ),
+                        seen_at,
+                    ),
+                    else_=EventType.last_seen_at,
+                ),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        result = await self.session.execute(statement)
+        if result.rowcount != 1:
+            raise RuntimeError("Event type missing while recording receipt")
 
 
 class SubscriptionRepository(BaseRepository[Subscription]):

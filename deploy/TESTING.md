@@ -4,7 +4,7 @@
 
 Clonar este backend y ubicarse en la raíz del clon. Tener Git, Python 3.12 o superior y Docker con Compose disponibles en PATH; Docker Desktop debe estar iniciado en Windows. Docker debe usar un motor local. Las imágenes, dependencias y el frontend fijado se descargan por Internet; es necesario acceso a los repositorios y registros correspondientes.
 
-No usar el checkout de AWS para este ensayo. No hacen falta secretos de producción ni un clon manual del frontend. El frontend se obtiene en la revisión `27df1e4636ba1b7df60f23ca14f6b967487c021c`; cambiarla requiere revisar compatibilidad y volver a validar la candidata.
+No usar el checkout de AWS para este ensayo. No hacen falta secretos de producción ni un clon manual del frontend. El frontend se obtiene en la revisión `d00f07b71aaa61d27adcb179ec5a3180e9e78874`; cambiarla requiere revisar compatibilidad y volver a validar la candidata.
 
 ## Un comando desde el clon
 

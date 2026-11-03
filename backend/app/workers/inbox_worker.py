@@ -41,6 +41,7 @@ from app.repositories.registry_repository import (
 from app.services.delivery_service import DeliveryService
 from app.services.envelope import EventEnvelope
 from app.services.event_hub_service import EventHubService
+from app.services.source_identity import check_source
 
 logger = structlog.get_logger(__name__)
 
@@ -70,6 +71,25 @@ async def _handle_inbox(message: InboundMessage) -> None:
             await session.commit()
             logger.warning("inbox_malformed", error=str(exc))
             return
+
+        # DEF-19: por HTTP el token define el modulo; por AMQP, el usuario de la
+        # conexion. Se comprueba antes de cualquier efecto (ni evento ni entregas).
+        if settings.amqp_source_check != "off":
+            check = check_source(
+                message.user_id, envelope.source_module, identities=settings.amqp_identities
+            )
+            if not check.ok and settings.amqp_source_check == "enforce":
+                await hub.record_unverified_source(envelope, check=check, user_id=message.user_id)
+                await session.commit()
+                return
+            if not check.ok:
+                logger.warning(
+                    "amqp_source_unverified_accepted",
+                    event_id=str(envelope.event_id),
+                    code=check.code,
+                    user_id=message.user_id,
+                    declared_source=envelope.source_module,
+                )
 
         result = await hub.ingest(envelope, channel=IngestionChannel.AMQP)
 

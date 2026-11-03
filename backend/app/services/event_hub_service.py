@@ -58,6 +58,7 @@ from app.repositories.registry_repository import (
 )
 from app.services.envelope import EventEnvelope
 from app.services.retry_policy import RetryPolicy, default_retry_policy
+from app.services.source_identity import SourceCheck
 from app.services.validation import validate_data
 
 logger = structlog.get_logger(__name__)
@@ -65,6 +66,8 @@ logger = structlog.get_logger(__name__)
 REASON_SCHEMA_VIOLATION = "SCHEMA_VIOLATION"
 REASON_MALFORMED_MESSAGE = "MALFORMED_MESSAGE"
 REASON_DELIVERY_FAILED = "DELIVERY_FAILED"
+# Por AMQP, el sourceModule no corresponde a la identidad del publicador (DEF-19).
+REASON_SOURCE_UNVERIFIED = "SOURCE_UNVERIFIED"
 
 
 @dataclass
@@ -112,6 +115,25 @@ class EventHubService:
 
     # ------------------------------------------------------------------
     async def ingest(
+        self,
+        envelope: EventEnvelope,
+        *,
+        channel: IngestionChannel = IngestionChannel.AMQP,
+    ) -> IngestResult:
+        """Record receipt late and atomically without counting duplicates."""
+        started = utcnow()
+        result = await self._ingest(envelope, channel=channel)
+        if not result.duplicate:
+            # A newly discovered type already starts with one receipt.
+            if not result.event_type_discovered:
+                await self.event_type_repo.record_received(
+                    envelope.event_type,
+                    seen_at=result.event_log.received_at,
+                )
+            result.event_log.processing_ms = _elapsed_ms(started)
+        return result
+
+    async def _ingest(
         self,
         envelope: EventEnvelope,
         *,
@@ -373,6 +395,43 @@ class EventHubService:
         )
         self.dead_letter_repo.add(dead_letter)
         logger.warning("malformed_message", queue=queue, preview=raw_body[:200])
+        return dead_letter
+
+    async def record_unverified_source(
+        self, envelope: EventEnvelope, *, check: SourceCheck, user_id: str | None
+    ) -> DeadLetter:
+        """Evento por AMQP cuyo origen no se pudo atribuir al publicador (DEF-19).
+
+        Queda solo como dead letter: no se crea el evento ni se entrega a nadie,
+        y el eventId no queda reservado, asi que el publicador legitimo puede
+        reenviar el mismo evento con su identidad. El sourceModule declarado se
+        guarda tal cual: el modulo suplantado ve el intento en su DLQ.
+        """
+        dead_letter = DeadLetter(
+            event_id=envelope.event_id,
+            event_type=envelope.event_type,
+            source_module=envelope.source_module,
+            reason_code=REASON_SOURCE_UNVERIFIED,
+            reason=check.message,
+            details=[
+                {
+                    "code": check.code,
+                    "userId": user_id,
+                    "authenticatedModule": check.authenticated_module,
+                    "declaredSourceModule": envelope.source_module,
+                }
+            ],
+            raw_payload=envelope.to_wire(),
+            attempts=1,
+        )
+        self.dead_letter_repo.add(dead_letter)
+        logger.warning(
+            "amqp_source_rejected",
+            event_id=str(envelope.event_id),
+            code=check.code,
+            user_id=user_id,
+            declared_source=envelope.source_module,
+        )
         return dead_letter
 
     # ------------------------------------------------------------------

@@ -66,9 +66,9 @@ async def publish_event(
 
     result = await hub.ingest(envelope, channel=IngestionChannel.HTTP)
 
-    module = await module_repo.get_by_name(envelope.source_module)
-    if module is not None:
-        module.last_publish_at = utcnow()
+    await module_repo.record_publication(
+        envelope.source_module, published_at=utcnow()
+    )
 
     if result.duplicate:
         response.status_code = status.HTTP_200_OK

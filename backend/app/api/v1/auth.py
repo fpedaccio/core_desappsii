@@ -12,9 +12,11 @@ el acceso al dashboard a nadie.
 from __future__ import annotations
 
 import hashlib
+import inspect
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.deps import AuthDep, CallerDep
 from app.api.v1.schemas.dto import (
@@ -24,30 +26,46 @@ from app.api.v1.schemas.dto import (
     TokenResponse,
 )
 from app.core.auth_rate_limit import AuthRateLimiter
-from app.core.context import get_trace_id
+from app.core.config import settings
+from app.core.database import SessionFactory, engine
+from app.core.errors import problem_response
+from app.core.shared_auth_rate_limit import SharedAuthRateLimiter
 
 router = APIRouter(tags=["Autenticacion"])
 
 
-def _check_auth_limit(request: Request, identity: str) -> JSONResponse | None:
-    limiter = getattr(request.app.state, "auth_rate_limiter", None)
-    if limiter is None:
-        limiter = AuthRateLimiter()
-        request.app.state.auth_rate_limiter = limiter
-    # No passwords, secrets or raw account identifiers in stored keys.
-    digest = hashlib.sha256(identity.strip().casefold().encode("utf-8")).hexdigest()
-    retry_after = limiter.check(request.url.path + ":" + digest)
+async def _check_auth_limit(request: Request, identity: str) -> JSONResponse | None:
+    try:
+        limiter = getattr(request.app.state, "auth_rate_limiter", None)
+        if limiter is None:
+            if engine.dialect.name == "postgresql":
+                limiter = SharedAuthRateLimiter(SessionFactory)
+            elif settings.is_production:
+                raise RuntimeError("Shared authentication limiter requires PostgreSQL")
+            else:
+                limiter = AuthRateLimiter()
+            request.app.state.auth_rate_limiter = limiter
+
+        # No passwords, secrets or raw account identifiers in stored keys.
+        digest = hashlib.sha256(identity.strip().casefold().encode("utf-8")).hexdigest()
+        result = limiter.check(request.url.path + ":" + digest)
+        retry_after = await result if inspect.isawaitable(result) else result
+    except (SQLAlchemyError, TimeoutError, OSError, RuntimeError):
+        return problem_response(
+            request,
+            status_code=503,
+            code="AUTH_RATE_LIMIT_UNAVAILABLE",
+            message="Autenticacion temporalmente no disponible. Reintenta mas tarde.",
+            headers={"Retry-After": "5", "Cache-Control": "no-store"},
+        )
     if not retry_after:
         return None
-    return JSONResponse(
+    return problem_response(
+        request,
         status_code=429,
+        code="RATE_LIMITED",
+        message="Demasiados intentos. Reintenta mas tarde.",
         headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"},
-        content={
-            "code": "RATE_LIMITED",
-            "message": "Demasiados intentos. Reintenta mas tarde.",
-            "details": [],
-            "traceId": get_trace_id(),
-        },
     )
 
 
@@ -66,9 +84,10 @@ def _as_response(token) -> TokenResponse:
 @router.post(
     "/auth/login",
     responses={
+        503: {"description": "Almacenamiento del limitador no disponible."},
         429: {
             "description": (
-                "Limite local por identidad: 10 solicitudes cada 60 segundos; Retry-After."
+                "10 solicitudes por identidad cada 60 segundos; compartido en PostgreSQL."
             )
         }
     },
@@ -84,7 +103,7 @@ def _as_response(token) -> TokenResponse:
 async def login(
     payload: LoginRequest, auth: AuthDep, request: Request
 ) -> TokenResponse | JSONResponse:
-    blocked = _check_auth_limit(request, payload.email)
+    blocked = await _check_auth_limit(request, payload.email)
     if blocked is not None:
         return blocked
     _, token = await auth.login(email=payload.email, password=payload.password)
@@ -94,9 +113,10 @@ async def login(
 @router.post(
     "/auth/module-token",
     responses={
+        503: {"description": "Almacenamiento del limitador no disponible."},
         429: {
             "description": (
-                "Limite local por identidad: 10 solicitudes cada 60 segundos; Retry-After."
+                "10 solicitudes por identidad cada 60 segundos; compartido en PostgreSQL."
             )
         }
     },
@@ -111,7 +131,7 @@ async def login(
 async def module_token(
     payload: ModuleTokenRequest, auth: AuthDep, request: Request
 ) -> TokenResponse | JSONResponse:
-    blocked = _check_auth_limit(request, payload.module)
+    blocked = await _check_auth_limit(request, payload.module)
     if blocked is not None:
         return blocked
     token = await auth.issue_module_token(module_name=payload.module, secret=payload.secret)
