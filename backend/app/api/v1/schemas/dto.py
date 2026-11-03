@@ -495,7 +495,10 @@ class DeadLetterResponse(CamelModel):
 
     @classmethod
     def of(cls, dead_letter: DeadLetter) -> DeadLetterResponse:
-        from app.services.event_hub_service import REASON_MALFORMED_MESSAGE
+        from app.services.event_hub_service import (
+            REASON_MALFORMED_MESSAGE,
+            REASON_SOURCE_UNVERIFIED,
+        )
 
         return cls(
             id=dead_letter.id,
@@ -515,7 +518,8 @@ class DeadLetterResponse(CamelModel):
             retry_count=len(dead_letter.retries),
             retryable=(
                 dead_letter.status == DeadLetterStatus.OPEN
-                and dead_letter.reason_code != REASON_MALFORMED_MESSAGE
+                and dead_letter.reason_code
+                not in {REASON_MALFORMED_MESSAGE, REASON_SOURCE_UNVERIFIED}
             ),
         )
 
