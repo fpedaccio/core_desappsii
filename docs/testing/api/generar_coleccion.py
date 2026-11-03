@@ -290,12 +290,12 @@ pm.test("AUTH-02 hallazgo C-02: el `detail` real es texto; HTTPValidationError d
            pruebas="""
 const me = pm.response.json();
 pm.test("AUTH-07 identifica al modulo A", () => pm.expect(me.module).to.eql(pm.collectionVariables.get('modA')));
-pm.test("AUTH-07 kind module y sin admin", () => { pm.expect(me.kind).to.eql('module'); pm.expect(me.isAdmin).to.be.false; });
+pm.test("AUTH-07 kind module, id null y sin admin", () => { pm.expect(me.kind).to.eql('module'); pm.expect(me.id).to.be.null; pm.expect(me.isAdmin).to.be.false; });
 """)
     g.caso("AUTH-08", "Me con token de persona", "GET", f"{API}/auth/me", token="tokenUserA", espera=200,
            pruebas="""
 const me = pm.response.json();
-pm.test("AUTH-08 kind user con email", () => { pm.expect(me.kind).to.eql('user'); pm.expect(me.email).to.eql(pm.collectionVariables.get('userAEmail')); });
+pm.test("AUTH-08 kind user con id y email", () => { pm.expect(me.kind).to.eql('user'); pm.expect(me.id).to.eql(pm.collectionVariables.get('userAId')); pm.expect(me.email).to.eql(pm.collectionVariables.get('userAEmail')); });
 """)
     g.caso("AUTH-09", "Me sin token", "GET", f"{API}/auth/me", espera=401)
     g.caso("AUTH-10", "Me con token mal formado", "GET", f"{API}/auth/me", token='"abc.def.ghi"', espera=401)

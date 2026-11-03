@@ -134,3 +134,48 @@ async def test_503_limitador_compartido_no_disponible(client, monkeypatch):
     _assert_problem(response, 503, "AUTH_RATE_LIMIT_UNAVAILABLE", "/api/v1/auth/login")
     assert response.headers["retry-after"] == "5"
     assert "private-storage-detail" not in response.text
+
+
+async def test_openapi_declara_problem_details_codigos_y_headers(client):
+    openapi = (await client.get("/openapi.json")).json()
+    schemas = openapi["components"]["schemas"]
+    assert "ProblemDetails" in schemas
+    assert "HTTPValidationError" not in schemas
+    assert set(schemas["ProblemDetails"]["required"]) == {
+        "type",
+        "title",
+        "status",
+        "detail",
+        "code",
+        "message",
+        "details",
+        "traceId",
+    }
+
+    events_post = openapi["paths"]["/api/v1/events"]["post"]["responses"]
+    assert events_post["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/IngestResponse"
+    }
+    assert events_post["422"]["content"]["application/problem+json"]["schema"] == {
+        "$ref": "#/components/schemas/ProblemDetails"
+    }
+    assert events_post["422"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/IngestResponse"
+    }
+
+    for auth_path in ("/api/v1/auth/login", "/api/v1/auth/module-token"):
+        resp = openapi["paths"][auth_path]["post"]["responses"]
+        for status_code in ("401", "403", "422", "429", "503"):
+            assert resp[status_code]["content"]["application/problem+json"]["schema"] == {
+                "$ref": "#/components/schemas/ProblemDetails"
+            }
+        assert "Retry-After" in resp["429"]["headers"]
+        assert "Retry-After" in resp["503"]["headers"]
+
+    get_et = openapi["paths"]["/api/v1/event-types/{name}"]["get"]["responses"]
+    put_schema = openapi["paths"]["/api/v1/event-types/{name}/schema"]["put"]["responses"]
+    assert "ETag" in get_et["200"]["headers"]
+    assert "ETag" in put_schema["200"]["headers"]
+    assert put_schema["412"]["content"]["application/problem+json"]["schema"] == {
+        "$ref": "#/components/schemas/ProblemDetails"
+    }

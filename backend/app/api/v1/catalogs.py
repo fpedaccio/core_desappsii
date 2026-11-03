@@ -18,6 +18,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query, status
 
 from app.api.deps import AdminDep, CallerDep, CatalogServiceDep
+from app.api.v1.schemas.common import problem_responses
 from app.api.v1.schemas.dto import (
     BarrioCreate,
     BarrioResponse,
@@ -30,7 +31,7 @@ from app.api.v1.schemas.dto import (
     ZonaUpdate,
 )
 
-router = APIRouter(tags=["Catalogos globales"])
+router = APIRouter(tags=["Catalogos globales"], responses=problem_responses(401))
 
 
 # ----------------------------------------------------------------------
@@ -60,6 +61,7 @@ async def listar_zonas(
     "/catalogos/zonas",
     response_model=ZonaResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=problem_responses(403, 409),
     summary="Crear una zona",
 )
 async def crear_zona(
@@ -74,6 +76,7 @@ async def crear_zona(
 @router.patch(
     "/catalogos/zonas/{codigo}",
     response_model=ZonaResponse,
+    responses=problem_responses(403, 404),
     summary="Modificar una zona",
     description="Para dar de baja una zona se usa `activo: false`. **Nada se borra**.",
 )
@@ -118,6 +121,7 @@ async def listar_barrios(
 @router.get(
     "/catalogos/barrios/{codigo}",
     response_model=BarrioResponse,
+    responses=problem_responses(404),
     summary="Obtener un barrio por su codigo",
 )
 async def obtener_barrio(
@@ -130,6 +134,7 @@ async def obtener_barrio(
     "/catalogos/barrios",
     response_model=BarrioResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=problem_responses(403, 404, 409),
     summary="Crear un barrio",
 )
 async def crear_barrio(
@@ -147,6 +152,7 @@ async def crear_barrio(
 @router.patch(
     "/catalogos/barrios/{codigo}",
     response_model=BarrioResponse,
+    responses=problem_responses(403, 404),
     summary="Modificar un barrio",
     description="Para dar de baja un barrio se usa `activo: false`. **Nada se borra**.",
 )
@@ -200,6 +206,7 @@ async def listar_items(
     "/catalogos/{catalogo}/items",
     response_model=ItemDeCatalogoResponse,
     status_code=status.HTTP_201_CREATED,
+    responses=problem_responses(403, 409),
     summary="Agregar un item a un catalogo",
     description="Si el catalogo no existia, se crea con este primer item.",
 )
@@ -220,6 +227,7 @@ async def crear_item(
 @router.patch(
     "/catalogos/{catalogo}/items/{codigo}",
     response_model=ItemDeCatalogoResponse,
+    responses=problem_responses(403, 404),
     summary="Modificar un item de catalogo",
 )
 async def actualizar_item(

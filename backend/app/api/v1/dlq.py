@@ -15,7 +15,7 @@ from app.api.deps import (
     DeliveryRepoDep,
     RetryAuditRepoDep,
 )
-from app.api.v1.schemas.common import MessageResponse, PageResponse
+from app.api.v1.schemas.common import MessageResponse, PageResponse, problem_responses
 from app.api.v1.schemas.dto import (
     BulkRetryRequest,
     BulkRetryResponse,
@@ -30,7 +30,7 @@ from app.core.errors import NotFoundError
 from app.models.events import DeadLetter, DeadLetterStatus, DeliveryStatus
 from app.repositories.event_repository import DeadLetterRepository
 
-router = APIRouter(tags=["DLQ y entregas"])
+router = APIRouter(tags=["DLQ y entregas"], responses=problem_responses(401))
 
 
 async def _visible_dead_letter(
@@ -96,6 +96,7 @@ async def list_dead_letters(
 @router.get(
     "/dlq/{dead_letter_id}",
     response_model=DeadLetterDetailResponse,
+    responses=problem_responses(404),
     summary="Detalle de una dead letter",
     description="Con el payload crudo, el detalle del error y el historial de reintentos.",
 )
@@ -109,6 +110,7 @@ async def get_dead_letter(
 @router.post(
     "/dlq/{dead_letter_id}/retry",
     response_model=RetryResultResponse,
+    responses=problem_responses(404, 409),
     summary="Reintentar",
     description=(
         "El Core elige el camino segun la causa, no hace falta decidirlo:\n\n"
@@ -140,6 +142,7 @@ async def retry_dead_letter(
 @router.post(
     "/dlq/retry-bulk",
     response_model=BulkRetryResponse,
+    responses=problem_responses(403),
     summary="Reintento masivo",
     description=(
         "Hasta 200 dead letters. Cada una se audita por separado y un fallo no "
@@ -169,6 +172,7 @@ async def retry_bulk(
 @router.post(
     "/dlq/{dead_letter_id}/discard",
     response_model=DeadLetterResponse,
+    responses=problem_responses(403, 404, 409),
     summary="Descartar con motivo",
     description=(
         "El motivo es **obligatorio** y queda en la auditoria. El registro se "
@@ -188,6 +192,7 @@ async def discard_dead_letter(
 @router.get(
     "/dlq/{dead_letter_id}/audit",
     response_model=PageResponse[RetryAuditResponse],
+    responses=problem_responses(404),
     summary="Auditoria de reintentos",
     description=(
         "Cada intento (automatico o manual) con quien lo hizo, cuando y que resultado dio. "
@@ -242,6 +247,7 @@ async def list_deliveries(
 @router.post(
     "/deliveries/process-due-retries",
     response_model=MessageResponse,
+    responses=problem_responses(403),
     summary="Completar reintentos vencidos",
     description=(
         "Solo el administrador. Completa las entregas que quedaron pendientes "

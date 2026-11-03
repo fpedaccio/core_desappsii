@@ -478,7 +478,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"AUTH-06 responde 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"AUTH-06 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"module\": {\"type\": \"string\"}, \"displayName\": {\"type\": \"string\"}, \"isAdmin\": {\"type\": \"boolean\"}, \"kind\": {\"type\": \"string\"}, \"email\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"name\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"module\", \"displayName\", \"isAdmin\", \"kind\"]}));",
+                  "pm.test(\"AUTH-06 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"id\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"module\": {\"type\": \"string\"}, \"displayName\": {\"type\": \"string\"}, \"isAdmin\": {\"type\": \"boolean\"}, \"kind\": {\"type\": \"string\"}, \"email\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"name\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"module\", \"displayName\", \"isAdmin\", \"kind\"]}));",
                   "pm.test(\"AUTH-06 isAdmin\", () => pm.expect(pm.response.json().isAdmin).to.be.true);"
                 ]
               }
@@ -504,8 +504,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"AUTH-07 responde 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"AUTH-07 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"module\": {\"type\": \"string\"}, \"displayName\": {\"type\": \"string\"}, \"isAdmin\": {\"type\": \"boolean\"}, \"kind\": {\"type\": \"string\"}, \"email\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"name\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"module\", \"displayName\", \"isAdmin\", \"kind\"]}));",
-                  "const me = pm.response.json();\npm.test(\"AUTH-07 identifica al modulo A\", () => pm.expect(me.module).to.eql(pm.collectionVariables.get('modA')));\npm.test(\"AUTH-07 kind module y sin admin\", () => { pm.expect(me.kind).to.eql('module'); pm.expect(me.isAdmin).to.be.false; });"
+                  "pm.test(\"AUTH-07 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"id\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"module\": {\"type\": \"string\"}, \"displayName\": {\"type\": \"string\"}, \"isAdmin\": {\"type\": \"boolean\"}, \"kind\": {\"type\": \"string\"}, \"email\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"name\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"module\", \"displayName\", \"isAdmin\", \"kind\"]}));",
+                  "const me = pm.response.json();\npm.test(\"AUTH-07 identifica al modulo A\", () => pm.expect(me.module).to.eql(pm.collectionVariables.get('modA')));\npm.test(\"AUTH-07 kind module, id null y sin admin\", () => { pm.expect(me.kind).to.eql('module'); pm.expect(me.id).to.be.null; pm.expect(me.isAdmin).to.be.false; });"
                 ]
               }
             }
@@ -530,8 +530,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"AUTH-08 responde 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"AUTH-08 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"module\": {\"type\": \"string\"}, \"displayName\": {\"type\": \"string\"}, \"isAdmin\": {\"type\": \"boolean\"}, \"kind\": {\"type\": \"string\"}, \"email\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"name\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"module\", \"displayName\", \"isAdmin\", \"kind\"]}));",
-                  "const me = pm.response.json();\npm.test(\"AUTH-08 kind user con email\", () => { pm.expect(me.kind).to.eql('user'); pm.expect(me.email).to.eql(pm.collectionVariables.get('userAEmail')); });"
+                  "pm.test(\"AUTH-08 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"id\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"module\": {\"type\": \"string\"}, \"displayName\": {\"type\": \"string\"}, \"isAdmin\": {\"type\": \"boolean\"}, \"kind\": {\"type\": \"string\"}, \"email\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"name\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"module\", \"displayName\", \"isAdmin\", \"kind\"]}));",
+                  "const me = pm.response.json();\npm.test(\"AUTH-08 kind user con id y email\", () => { pm.expect(me.kind).to.eql('user'); pm.expect(me.id).to.eql(pm.collectionVariables.get('userAId')); pm.expect(me.email).to.eql(pm.collectionVariables.get('userAEmail')); });"
                 ]
               }
             }
@@ -693,7 +693,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"AUTH-14 responde 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"AUTH-14 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"module\": {\"type\": \"string\"}, \"displayName\": {\"type\": \"string\"}, \"isAdmin\": {\"type\": \"boolean\"}, \"kind\": {\"type\": \"string\"}, \"email\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"name\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"module\", \"displayName\", \"isAdmin\", \"kind\"]}));"
+                  "pm.test(\"AUTH-14 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"id\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"module\": {\"type\": \"string\"}, \"displayName\": {\"type\": \"string\"}, \"isAdmin\": {\"type\": \"boolean\"}, \"kind\": {\"type\": \"string\"}, \"email\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"name\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"module\", \"displayName\", \"isAdmin\", \"kind\"]}));"
                 ]
               }
             }
@@ -2916,6 +2916,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"EV-02 responde 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"EV-02 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"eventId\": {\"type\": \"string\"}, \"status\": {\"type\": \"string\", \"enum\": [\"ROUTED\", \"NO_SUBSCRIBERS\", \"REJECTED\", \"DUPLICATE\"]}, \"accepted\": {\"type\": \"boolean\"}, \"duplicate\": {\"type\": \"boolean\"}, \"routedTo\": {\"items\": {\"type\": \"string\"}, \"type\": \"array\"}, \"deferredTo\": {\"items\": {\"type\": \"string\"}, \"type\": \"array\"}, \"alreadyDelivered\": {\"items\": {\"type\": \"string\"}, \"type\": \"array\"}, \"eventTypeDiscovered\": {\"type\": \"boolean\"}, \"rejectionCode\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"rejectionReason\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"details\": {\"items\": {}, \"type\": \"array\"}}, \"type\": \"object\", \"required\": [\"eventId\", \"status\", \"accepted\", \"duplicate\", \"routedTo\", \"deferredTo\", \"eventTypeDiscovered\"]}));",
                   "pm.test(\"EV-02 duplicate true\", () => pm.expect(pm.response.json().duplicate).to.be.true);"
                 ]
               }
@@ -5385,7 +5386,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"CLN-06 responde 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"CLN-06 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"module\": {\"type\": \"string\"}, \"displayName\": {\"type\": \"string\"}, \"isAdmin\": {\"type\": \"boolean\"}, \"kind\": {\"type\": \"string\"}, \"email\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"name\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"module\", \"displayName\", \"isAdmin\", \"kind\"]}));"
+                  "pm.test(\"CLN-06 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"id\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"module\": {\"type\": \"string\"}, \"displayName\": {\"type\": \"string\"}, \"isAdmin\": {\"type\": \"boolean\"}, \"kind\": {\"type\": \"string\"}, \"email\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"name\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"module\", \"displayName\", \"isAdmin\", \"kind\"]}));"
                 ]
               }
             }

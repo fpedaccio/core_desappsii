@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.deps import AuthDep, CallerDep
+from app.api.v1.schemas.common import problem_responses
 from app.api.v1.schemas.dto import (
     LoginRequest,
     MeResponse,
@@ -81,23 +82,52 @@ def _as_response(token) -> TokenResponse:
     )
 
 
+_AUTH_RESPONSES = {
+    **problem_responses(401, 403),
+    429: {
+        "description": "10 solicitudes por identidad cada 60 segundos; compartido en PostgreSQL.",
+        "headers": {
+            "Retry-After": {
+                "description": "Segundos restantes hasta que se libere la ventana del limitador.",
+                "schema": {"type": "string"},
+            }
+        },
+        "content": {
+            "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/ProblemDetails"}
+            }
+        },
+    },
+    503: {
+        "description": "Almacenamiento del limitador no disponible.",
+        "headers": {
+            "Retry-After": {
+                "description": "Segundos sugeridos antes de reintentar.",
+                "schema": {"type": "string"},
+            }
+        },
+        "content": {
+            "application/problem+json": {
+                "schema": {"$ref": "#/components/schemas/ProblemDetails"}
+            }
+        },
+    },
+}
+
+
 @router.post(
     "/auth/login",
-    responses={
-        503: {"description": "Almacenamiento del limitador no disponible."},
-        429: {
-            "description": (
-                "10 solicitudes por identidad cada 60 segundos; compartido en PostgreSQL."
-            )
-        }
-    },
+    responses=_AUTH_RESPONSES,
     response_model=TokenResponse,
     summary="Entrar al dashboard (persona)",
     description=(
         "Login de un integrante de un equipo. El token queda atado al modulo de "
         "la persona, y la auditoria registra su email.\n\n"
         "Tras 5 intentos fallidos consecutivos la cuenta se desactiva; la puede "
-        "reactivar cualquier integrante del mismo equipo."
+        "reactivar cualquier integrante del mismo equipo.\n\n"
+        "Los JWT son stateless (validez por defecto: 15 minutos): desactivar una "
+        "cuenta o modulo impide emitir tokens nuevos en el acto, mientras que un "
+        "JWT emitido antes conserva validez residual hasta su `exp`."
     ),
 )
 async def login(
@@ -112,20 +142,17 @@ async def login(
 
 @router.post(
     "/auth/module-token",
-    responses={
-        503: {"description": "Almacenamiento del limitador no disponible."},
-        429: {
-            "description": (
-                "10 solicitudes por identidad cada 60 segundos; compartido en PostgreSQL."
-            )
-        }
-    },
+    responses=_AUTH_RESPONSES,
     response_model=TokenResponse,
     summary="Token de maquina (backend de un modulo)",
     description=(
         "Es lo que usa el backend de un equipo para publicar eventos. El secret "
         "vive en su configuracion, no lo usa ninguna persona.\n\n"
-        "No hay refresh: cuando el token expira se pide otro."
+        "No hay refresh: cuando el token expira se pide otro. Los JWT se validan "
+        "por firma y expiracion sin consulta a base ni lista de revocacion: rotar "
+        "el secret o desactivar el modulo bloquea inmediatamente nuevas emisiones "
+        "en este endpoint, pero un token ya emitido sigue siendo aceptado hasta "
+        "que vence su ventana (`expiresIn`)."
     ),
 )
 async def module_token(
@@ -141,14 +168,18 @@ async def module_token(
 @router.get(
     "/auth/me",
     response_model=MeResponse,
+    responses=problem_responses(401),
     summary="Quien soy",
     description=(
         "El frontend lo usa para saber si mostrar la vista de un modulo o la "
-        "global del administrador, y para restaurar la sesion al refrescar."
+        "global del administrador, para restaurar la sesion al refrescar y para "
+        "obtener el `id` de la cuenta cuando el token pertenece a una persona "
+        "(`null` cuando es un token de maquina)."
     ),
 )
 async def me(caller: CallerDep) -> MeResponse:
     return MeResponse(
+        id=caller.user_id,
         module=caller.module,
         display_name=caller.display_name,
         is_admin=caller.is_admin,

@@ -7,6 +7,8 @@ query, y los servicios no ven un `Request`.
 
 from __future__ import annotations
 
+import contextlib
+import uuid
 from dataclasses import dataclass
 from typing import Annotated
 
@@ -79,6 +81,7 @@ class Caller:
     is_admin: bool
     kind: str  # "user" | "module"
     actor: str
+    user_id: uuid.UUID | None = None
     email: str | None = None
     name: str | None = None
 
@@ -109,6 +112,11 @@ async def get_caller(
 
     kind = str(claims.get("kind") or "module")
     email = claims.get("email")
+    sub = str(claims.get("sub") or "")
+    user_id: uuid.UUID | None = None
+    if kind == "user" and sub.startswith("user:"):
+        with contextlib.suppress(ValueError):
+            user_id = uuid.UUID(sub.removeprefix("user:"))
 
     caller = Caller(
         module=str(module),
@@ -119,6 +127,7 @@ async def get_caller(
         # diga "lo hizo tal" y no "lo hizo el equipo 9" es justamente el punto
         # de tener cuentas por persona.
         actor=str(email) if email else f"module:{module}",
+        user_id=user_id,
         email=email,
         name=claims.get("name"),
     )
