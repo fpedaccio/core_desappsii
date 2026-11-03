@@ -1668,7 +1668,7 @@
           }
         },
         {
-          "name": "ET-06 A actualiza su schema",
+          "name": "ET-06 A actualiza su schema sin If-Match (compatibilidad)",
           "event": [
             {
               "listen": "test",
@@ -1687,6 +1687,254 @@
               {
                 "key": "Authorization",
                 "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{rootUrl}}/api/v1/event-types/{{evType}}/schema",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonSchema\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"marker\",\n      \"quantity\"\n    ],\n    \"properties\": {\n      \"marker\": {\n        \"type\": \"string\"\n      },\n      \"quantity\": {\n        \"type\": \"integer\"\n      }\n    },\n    \"additionalProperties\": false\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "ET-14 El tipo devuelve un ETag fuerte",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ET-14 responde 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"ET-14 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"id\": {\"type\": \"string\"}, \"name\": {\"type\": \"string\"}, \"description\": {\"type\": \"string\"}, \"ownerModule\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"discovered\": {\"type\": \"boolean\"}, \"validates\": {\"type\": \"boolean\"}, \"jsonSchema\": {\"anyOf\": [{\"additionalProperties\": true, \"type\": \"object\"}, {\"type\": \"null\"}]}, \"totalReceived\": {\"type\": \"integer\"}, \"firstSeenAt\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"lastSeenAt\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"id\", \"name\", \"description\", \"ownerModule\", \"discovered\", \"validates\", \"jsonSchema\", \"totalReceived\", \"firstSeenAt\", \"lastSeenAt\"]}));",
+                  "const etag = pm.response.headers.get('ETag');\npm.test(\"ET-14 ETag fuerte entre comillas\", () => { pm.expect(etag).to.match(/^\"[^\"]+\"$/); });\npm.collectionVariables.set('etag1', etag);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ],
+            "url": "{{rootUrl}}/api/v1/event-types/{{evType}}"
+          }
+        },
+        {
+          "name": "ET-15 PUT con If-Match vigente aplica y devuelve un ETag nuevo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ET-15 responde 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"ET-15 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"id\": {\"type\": \"string\"}, \"name\": {\"type\": \"string\"}, \"description\": {\"type\": \"string\"}, \"ownerModule\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"discovered\": {\"type\": \"boolean\"}, \"validates\": {\"type\": \"boolean\"}, \"jsonSchema\": {\"anyOf\": [{\"additionalProperties\": true, \"type\": \"object\"}, {\"type\": \"null\"}]}, \"totalReceived\": {\"type\": \"integer\"}, \"firstSeenAt\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"lastSeenAt\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"id\", \"name\", \"description\", \"ownerModule\", \"discovered\", \"validates\", \"jsonSchema\", \"totalReceived\", \"firstSeenAt\", \"lastSeenAt\"]}));",
+                  "const etag = pm.response.headers.get('ETag');\npm.test(\"ET-15 ETag nuevo y distinto\", () => { pm.expect(etag).to.match(/^\"[^\"]+\"$/); pm.expect(etag).to.not.eql(pm.collectionVariables.get('etag1')); });\npm.collectionVariables.set('etag2', etag);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{etag1}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{rootUrl}}/api/v1/event-types/{{evType}}/schema",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonSchema\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"marker\",\n      \"quantity\"\n    ],\n    \"properties\": {\n      \"marker\": {\n        \"type\": \"string\"\n      },\n      \"quantity\": {\n        \"type\": \"integer\"\n      },\n      \"note\": {\n        \"type\": \"string\"\n      }\n    },\n    \"additionalProperties\": false\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "ET-16 PUT con If-Match desactualizado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ET-16 responde 412\", () => pm.response.to.have.status(412));",
+                  "pm.test(\"ET-16 cuerpo de error del Core\", () => pm.response.to.have.jsonSchema({\"type\": \"object\", \"required\": [\"type\", \"title\", \"status\", \"detail\", \"code\", \"message\", \"details\", \"traceId\"], \"properties\": {\"type\": {\"type\": \"string\"}, \"title\": {\"type\": \"string\"}, \"status\": {\"type\": \"integer\"}, \"detail\": {\"type\": \"string\"}, \"instance\": {\"type\": \"string\"}, \"code\": {\"type\": \"string\"}, \"message\": {\"type\": \"string\"}, \"details\": {\"type\": \"array\"}, \"traceId\": {\"type\": [\"string\", \"null\"]}}}));",
+                  "pm.test(\"ET-16 application/problem+json con status 412\", () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().status).to.eql(412); });",
+                  "pm.test(\"ET-16 el error no trae token\", () => pm.expect(pm.response.text()).to.not.include('accessToken'));",
+                  "pm.test(\"ET-16 code PRECONDITION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"PRECONDITION_FAILED\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{etag1}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{rootUrl}}/api/v1/event-types/{{evType}}/schema",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonSchema\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"marker\",\n      \"quantity\"\n    ],\n    \"properties\": {\n      \"marker\": {\n        \"type\": \"string\"\n      },\n      \"quantity\": {\n        \"type\": \"integer\"\n      }\n    },\n    \"additionalProperties\": false\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "ET-17 El 412 no aplico el cambio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ET-17 responde 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"ET-17 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"id\": {\"type\": \"string\"}, \"name\": {\"type\": \"string\"}, \"description\": {\"type\": \"string\"}, \"ownerModule\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"discovered\": {\"type\": \"boolean\"}, \"validates\": {\"type\": \"boolean\"}, \"jsonSchema\": {\"anyOf\": [{\"additionalProperties\": true, \"type\": \"object\"}, {\"type\": \"null\"}]}, \"totalReceived\": {\"type\": \"integer\"}, \"firstSeenAt\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"lastSeenAt\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"id\", \"name\", \"description\", \"ownerModule\", \"discovered\", \"validates\", \"jsonSchema\", \"totalReceived\", \"firstSeenAt\", \"lastSeenAt\"]}));",
+                  "pm.test(\"ET-17 mismo ETag que despues de ET-15\", () => pm.expect(pm.response.headers.get('ETag')).to.eql(pm.collectionVariables.get('etag2')));\npm.test(\"ET-17 conserva el schema de ET-15\", () => pm.expect(pm.response.json().jsonSchema.properties).to.have.property('note'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              }
+            ],
+            "url": "{{rootUrl}}/api/v1/event-types/{{evType}}"
+          }
+        },
+        {
+          "name": "ET-18 Un modulo ajeno recibe 403 aunque su If-Match sea vigente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ET-18 responde 403\", () => pm.response.to.have.status(403));",
+                  "pm.test(\"ET-18 cuerpo de error del Core\", () => pm.response.to.have.jsonSchema({\"type\": \"object\", \"required\": [\"type\", \"title\", \"status\", \"detail\", \"code\", \"message\", \"details\", \"traceId\"], \"properties\": {\"type\": {\"type\": \"string\"}, \"title\": {\"type\": \"string\"}, \"status\": {\"type\": \"integer\"}, \"detail\": {\"type\": \"string\"}, \"instance\": {\"type\": \"string\"}, \"code\": {\"type\": \"string\"}, \"message\": {\"type\": \"string\"}, \"details\": {\"type\": \"array\"}, \"traceId\": {\"type\": [\"string\", \"null\"]}}}));",
+                  "pm.test(\"ET-18 application/problem+json con status 403\", () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().status).to.eql(403); });",
+                  "pm.test(\"ET-18 el error no trae token\", () => pm.expect(pm.response.text()).to.not.include('accessToken'));",
+                  "pm.test(\"ET-18 code FORBIDDEN\", () => pm.expect(pm.response.json().code).to.eql(\"FORBIDDEN\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenB}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "{{etag2}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{rootUrl}}/api/v1/event-types/{{evType}}/schema",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonSchema\": null\n}"
+            }
+          }
+        },
+        {
+          "name": "ET-19 Un ETag debil nunca coincide",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ET-19 responde 412\", () => pm.response.to.have.status(412));",
+                  "pm.test(\"ET-19 cuerpo de error del Core\", () => pm.response.to.have.jsonSchema({\"type\": \"object\", \"required\": [\"type\", \"title\", \"status\", \"detail\", \"code\", \"message\", \"details\", \"traceId\"], \"properties\": {\"type\": {\"type\": \"string\"}, \"title\": {\"type\": \"string\"}, \"status\": {\"type\": \"integer\"}, \"detail\": {\"type\": \"string\"}, \"instance\": {\"type\": \"string\"}, \"code\": {\"type\": \"string\"}, \"message\": {\"type\": \"string\"}, \"details\": {\"type\": \"array\"}, \"traceId\": {\"type\": [\"string\", \"null\"]}}}));",
+                  "pm.test(\"ET-19 application/problem+json con status 412\", () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/problem+json'); pm.expect(pm.response.json().status).to.eql(412); });",
+                  "pm.test(\"ET-19 el error no trae token\", () => pm.expect(pm.response.text()).to.not.include('accessToken'));",
+                  "pm.test(\"ET-19 code PRECONDITION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"PRECONDITION_FAILED\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "W/{{etag2}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{rootUrl}}/api/v1/event-types/{{evType}}/schema",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonSchema\": {\n    \"type\": \"object\",\n    \"required\": [\n      \"marker\",\n      \"quantity\"\n    ],\n    \"properties\": {\n      \"marker\": {\n        \"type\": \"string\"\n      },\n      \"quantity\": {\n        \"type\": \"integer\"\n      }\n    },\n    \"additionalProperties\": false\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "ET-20 If-Match * restaura el schema original",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ET-20 responde 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"ET-20 cuerpo cumple el schema 200 del OpenAPI\", () => pm.response.to.have.jsonSchema({\"properties\": {\"id\": {\"type\": \"string\"}, \"name\": {\"type\": \"string\"}, \"description\": {\"type\": \"string\"}, \"ownerModule\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"discovered\": {\"type\": \"boolean\"}, \"validates\": {\"type\": \"boolean\"}, \"jsonSchema\": {\"anyOf\": [{\"additionalProperties\": true, \"type\": \"object\"}, {\"type\": \"null\"}]}, \"totalReceived\": {\"type\": \"integer\"}, \"firstSeenAt\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}, \"lastSeenAt\": {\"anyOf\": [{\"type\": \"string\"}, {\"type\": \"null\"}]}}, \"type\": \"object\", \"required\": [\"id\", \"name\", \"description\", \"ownerModule\", \"discovered\", \"validates\", \"jsonSchema\", \"totalReceived\", \"firstSeenAt\", \"lastSeenAt\"]}));",
+                  "pm.test(\"ET-20 sin la propiedad note\", () => pm.expect(pm.response.json().jsonSchema.properties).to.not.have.property(\"note\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{tokenA}}"
+              },
+              {
+                "key": "If-Match",
+                "value": "*"
               },
               {
                 "key": "Content-Type",
@@ -5287,6 +5535,14 @@
     },
     {
       "key": "dlId2",
+      "value": ""
+    },
+    {
+      "key": "etag1",
+      "value": ""
+    },
+    {
+      "key": "etag2",
       "value": ""
     },
     {

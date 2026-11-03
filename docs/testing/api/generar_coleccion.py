@@ -110,6 +110,7 @@ class Generador:
         pruebas: str = "",
         previo: str = "",
         schema_de: tuple[str, str, int] | None = None,
+        cabeceras: dict[str, str] | None = None,
     ) -> None:
         """Agrega un caso.
 
@@ -159,13 +160,15 @@ class Generador:
         if pruebas:
             js.append(pruebas.strip())
 
-        cabeceras = []
+        lista_cabeceras = []
         if token:
             valor = token.strip('"') if token.startswith('"') else "{{" + token + "}}"
-            cabeceras.append({"key": "Authorization", "value": f"Bearer {valor}"})
-        request = {"method": metodo, "header": cabeceras, "url": texto_url}
+            lista_cabeceras.append({"key": "Authorization", "value": f"Bearer {valor}"})
+        for clave, valor in (cabeceras or {}).items():
+            lista_cabeceras.append({"key": clave, "value": valor})
+        request = {"method": metodo, "header": lista_cabeceras, "url": texto_url}
         if cuerpo is not None:
-            cabeceras.append({"key": "Content-Type", "value": "application/json"})
+            lista_cabeceras.append({"key": "Content-Type", "value": "application/json"})
             raw = cuerpo if isinstance(cuerpo, str) else json.dumps(cuerpo, ensure_ascii=False, indent=2)
             request["body"] = {"mode": "raw", "raw": raw}
 
@@ -403,8 +406,45 @@ pm.collectionVariables.set('evTypeId', t.id);
            cuerpo={"name": "qaT6{{run}}Ajeno", "ownerModule": "{{modA}}"}, espera=403)
     g.caso("ET-05", "B no puede cambiar el schema del tipo de A", "PUT", f"{API}/event-types/{{name}}/schema",
            url=f"{API}/event-types/{ev}/schema", token="tokenB", cuerpo={"jsonSchema": None}, espera=403)
-    g.caso("ET-06", "A actualiza su schema", "PUT", f"{API}/event-types/{{name}}/schema",
+    g.caso("ET-06", "A actualiza su schema sin If-Match (compatibilidad)", "PUT", f"{API}/event-types/{{name}}/schema",
            url=f"{API}/event-types/{ev}/schema", token="tokenA", cuerpo={"jsonSchema": schema_flujo}, espera=200)
+
+    # DEF-18: ETag fuerte e If-Match en el schema (desde la integracion 342b0b1).
+    schema_con_nota = {**schema_flujo, "properties": {**schema_flujo["properties"], "note": {"type": "string"}}}
+    g.caso("ET-14", "El tipo devuelve un ETag fuerte", "GET", f"{API}/event-types/{{name}}",
+           url=f"{API}/event-types/{ev}", token="tokenA", espera=200,
+           pruebas="""
+const etag = pm.response.headers.get('ETag');
+pm.test("ET-14 ETag fuerte entre comillas", () => { pm.expect(etag).to.match(/^"[^"]+"$/); });
+pm.collectionVariables.set('etag1', etag);
+""")
+    g.caso("ET-15", "PUT con If-Match vigente aplica y devuelve un ETag nuevo", "PUT", f"{API}/event-types/{{name}}/schema",
+           url=f"{API}/event-types/{ev}/schema", token="tokenA", cuerpo={"jsonSchema": schema_con_nota},
+           cabeceras={"If-Match": "{{etag1}}"}, espera=200,
+           pruebas="""
+const etag = pm.response.headers.get('ETag');
+pm.test("ET-15 ETag nuevo y distinto", () => { pm.expect(etag).to.match(/^"[^"]+"$/); pm.expect(etag).to.not.eql(pm.collectionVariables.get('etag1')); });
+pm.collectionVariables.set('etag2', etag);
+""")
+    g.caso("ET-16", "PUT con If-Match desactualizado", "PUT", f"{API}/event-types/{{name}}/schema",
+           url=f"{API}/event-types/{ev}/schema", token="tokenA", cuerpo={"jsonSchema": schema_flujo},
+           cabeceras={"If-Match": "{{etag1}}"}, espera=412, codigo="PRECONDITION_FAILED")
+    g.caso("ET-17", "El 412 no aplico el cambio", "GET", f"{API}/event-types/{{name}}",
+           url=f"{API}/event-types/{ev}", token="tokenA", espera=200,
+           pruebas="""
+pm.test("ET-17 mismo ETag que despues de ET-15", () => pm.expect(pm.response.headers.get('ETag')).to.eql(pm.collectionVariables.get('etag2')));
+pm.test("ET-17 conserva el schema de ET-15", () => pm.expect(pm.response.json().jsonSchema.properties).to.have.property('note'));
+""")
+    g.caso("ET-18", "Un modulo ajeno recibe 403 aunque su If-Match sea vigente", "PUT", f"{API}/event-types/{{name}}/schema",
+           url=f"{API}/event-types/{ev}/schema", token="tokenB", cuerpo={"jsonSchema": None},
+           cabeceras={"If-Match": "{{etag2}}"}, espera=403, codigo="FORBIDDEN")
+    g.caso("ET-19", "Un ETag debil nunca coincide", "PUT", f"{API}/event-types/{{name}}/schema",
+           url=f"{API}/event-types/{ev}/schema", token="tokenA", cuerpo={"jsonSchema": schema_flujo},
+           cabeceras={"If-Match": "W/{{etag2}}"}, espera=412, codigo="PRECONDITION_FAILED")
+    g.caso("ET-20", "If-Match * restaura el schema original", "PUT", f"{API}/event-types/{{name}}/schema",
+           url=f"{API}/event-types/{ev}/schema", token="tokenA", cuerpo={"jsonSchema": schema_flujo},
+           cabeceras={"If-Match": "*"}, espera=200,
+           pruebas='pm.test("ET-20 sin la propiedad note", () => pm.expect(pm.response.json().jsonSchema.properties).to.not.have.property("note"));')
     g.caso("ET-07", "Schema que no es JSON Schema valido", "POST", f"{API}/event-types", token="tokenA",
            cuerpo={"name": "qaT6{{run}}Roto", "ownerModule": "{{modA}}", "jsonSchema": {"type": "no-existe"}}, espera=422)
     g.caso("ET-08", "C consulta el tipo de A", "GET", f"{API}/event-types/{{name}}",
@@ -774,7 +814,7 @@ def main() -> None:
         "userPwd", "userPwd2", "userAId", "userA2Id", "secretA", "secretB", "secretC",
         "secretBPrevio", "tokenAdmin", "tokenA", "tokenB", "tokenC", "tokenBPrevio",
         "tokenUserA", "pubId", "subB", "subC", "eventId1", "correlationId1", "occurredAt",
-        "eventIdSinZona", "eventIdInvalido", "eventIdInvalido2", "dlId", "dlId2", "auditTotal", "catalogo", "rlIntento",
+        "eventIdSinZona", "eventIdInvalido", "eventIdInvalido2", "dlId", "dlId2", "etag1", "etag2", "auditTotal", "catalogo", "rlIntento",
     ]
     coleccion = {
         "info": {
