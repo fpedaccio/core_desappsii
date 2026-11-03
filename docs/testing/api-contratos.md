@@ -45,18 +45,45 @@ conservan.
 | DEF-19, `enforce`, usuarios RabbitMQ restringidos | Mismo stack, worker reiniciado en `enforce` | 8 de 8 en dos corridas (ver [def19-identidad-amqp.md](def19-identidad-amqp.md)) |
 | Colección y AMQP en Docker, 3 corridas consecutivas | Workflow "Core API contracts", stack limpio con `testing_up.py`, worker en `warn` ([run 41560420733](https://github.com/fpedaccio/core_desappsii/actions/runs/41560420733), commit `ec6e618`) | 175 de 175 y 11 de 11 en las tres corridas. Backend CI y los 6 E2E de navegador también pasaron sobre ese commit |
 
-### Contraste con el OpenAPI de `342b0b1`
+### Contraste con el OpenAPI de `342b0b1` y alineación del contrato
 
-Las dos categorías dan lo mismo que en `16d1633`: 13 operaciones con el 422
-documentado que no coincide y 33 con status reales sin declarar. Además, DEF-18
-agrega dos diferencias:
+En `342b0b1` las dos categorías daban lo mismo que en `16d1633` (13 operaciones
+con el 422 documentado como `HTTPValidationError` y 33 con status reales sin
+declarar), más el 412 sin schema y el header `ETag` sin declarar en DEF-18.
 
-- El 412 está declarado con `application/problem+json`, pero **sin schema**.
-- El header `ETag` de las respuestas 200 de `GET /event-types/{name}` y `PUT
-  /event-types/{name}/schema` **no está documentado**. La colección lo verifica
-  igual (ET-14, ET-15 y ET-17).
+En esta revisión se alineó el OpenAPI generado por FastAPI y el endpoint
+`/api/v1/auth/me` con el comportamiento real:
 
-Siguen abiertas: la colección valida lo que la API hace hoy, no las resuelve.
+- **`ProblemDetails` unificado en todo el OpenAPI:** se definió `ProblemDetails`
+  en `backend/app/api/v1/schemas/common.py` con los miembros exactos que emite
+  `errors.py` (`type`, `title`, `status`, `detail`, `instance` opcional, `code`,
+  `message`, `details`, `traceId`) y se reemplazó en `create_app()` el `422` por
+  defecto (`HTTPValidationError`) por `application/problem+json` con
+  `ProblemDetails` (**0 divergencias en las 13 operaciones 422**).
+- **`POST /api/v1/events` (`200` y `422` dual):** el `200` (evento duplicado)
+  declara `IngestResponse` (validado en `EV-02`), y el `422` diferencia las dos
+  respuestas reales según la causa: `application/problem+json`
+  (`ProblemDetails`) cuando el sobre es inválido y no se persiste, y
+  `application/json` (`IngestResponse` con `status: REJECTED` y
+  `rejectionCode: SCHEMA_VIOLATION`) cuando `data` incumple el JSON Schema del
+  tipo, se persiste y se registra en la DLQ.
+- **Códigos y cabeceras declarados en las 33 operaciones:** se declararon los
+  status `401`, `403`, `404` y `409` en los routers correspondientes (**0
+  estados observados sin documentar**), se asoció `ProblemDetails` al `412` de
+  `PUT /event-types/{name}/schema` y a los `429`/`503` de `/auth/login` y
+  `/auth/module-token`, y se documentaron los encabezados de respuesta `ETag`
+  (en el `200` de `GET /event-types/{name}` y `PUT /event-types/{name}/schema`)
+  y `Retry-After` (en `429` y `503` del limitador de autenticación).
+- **`GET /api/v1/auth/me` con `id` de usuario (`AUTH-07`, `AUTH-08`):**
+  `MeResponse` expone `id` obtenido del claim `sub` (`user:<uuid>`) cuando
+  `kind == "user"`, y `null` cuando `kind == "module"`.
+- **Decisiones de contrato explicitadas en el OpenAPI:** se documentó la
+  ventana de validez residual de los JWT stateless (`expiresIn` de 15 min) tras
+  rotar el secret o desactivar un módulo/cuenta (mientras las nuevas emisiones
+  y entregas se bloquean en el acto), el carácter idempotente con respuesta
+  `201` al redeclarar tipos, publicaciones o suscripciones existentes, y la
+  visibilidad compartida del catálogo de integración (`GET /modules`,
+  `/event-types`, `/publications`) entre módulos autenticados.
 
 ## Revisión probada
 

@@ -79,6 +79,13 @@ class TokenResponse(CamelModel):
 
 
 class MeResponse(CamelModel):
+    id: uuid.UUID | None = Field(
+        default=None,
+        description=(
+            "Identificador de la cuenta cuando el token pertenece a una persona "
+            "(`kind='user'`); `null` para tokens de maquina (`kind='module'`)."
+        ),
+    )
     module: str
     display_name: str
     is_admin: bool

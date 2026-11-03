@@ -16,11 +16,13 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from app.api.v1 import auth, catalogs, dashboard, dlq, events, registry, users
+from app.api.v1.schemas.common import ProblemDetails
 from app.api.v1.schemas.dto import LivenessResponse, ReadinessResponse
 from app.core.config import settings
 from app.core.context import TRACE_HEADER, set_trace_id
@@ -223,7 +225,45 @@ def create_app() -> FastAPI:
 
     _register_health(app)
     _register_metrics(app)
+    _configure_openapi(app)
     return app
+
+
+def _configure_openapi(app: FastAPI) -> None:
+    """Reemplaza el 422 por defecto de FastAPI por ProblemDetails (RFC 9457)."""
+
+    def custom_openapi() -> dict:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            description=app.description,
+            routes=app.routes,
+            tags=app.openapi_tags,
+        )
+        schemas = schema.setdefault("components", {}).setdefault("schemas", {})
+        schemas["ProblemDetails"] = ProblemDetails.model_json_schema(by_alias=True)
+        schemas.pop("HTTPValidationError", None)
+        schemas.pop("ValidationError", None)
+
+        problem_ref = {"$ref": "#/components/schemas/ProblemDetails"}
+        for path_item in schema.get("paths", {}).values():
+            for operation in path_item.values():
+                if not isinstance(operation, dict):
+                    continue
+                resp_422 = operation.get("responses", {}).get("422")
+                if resp_422 and "HTTPValidationError" in str(resp_422):
+                    resp_422["description"] = (
+                        "Error de validacion en la solicitud (Problem Details RFC 9457)."
+                    )
+                    resp_422["content"] = {
+                        "application/problem+json": {"schema": problem_ref}
+                    }
+        app.openapi_schema = schema
+        return app.openapi_schema
+
+    app.openapi = custom_openapi  # type: ignore[method-assign]
 
 
 def _register_health(app: FastAPI) -> None:
