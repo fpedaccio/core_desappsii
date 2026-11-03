@@ -7,6 +7,57 @@ frontend fijado `d00f07b71aaa61d27adcb179ec5a3180e9e78874`. Fecha: 02/11/2026.
 Los resultados sobre `7b35db2` se conservan sin cambios en
 [api-contratos-7b35db2.md](api-contratos-7b35db2.md).
 
+## Revalidación sobre la integración `342b0b1`
+
+Revisión integrada de trabajo de T8: rama `devops/t8-integracion-pr19-22`,
+commit `342b0b1059e3f81c0c5520c01723d0c81c92d853`. Es `16d1633` con los PR
+#19, #20, #21 (DEF-18) y #22 (DEF-19). No es la versión final etiquetada. Las
+secciones siguientes, con sus corridas, corresponden a `16d1633` y se
+conservan.
+
+### Qué cambió en la colección
+
+- **DEF-18 (#21) cambia el OpenAPI.** Agrega el parámetro `If-Match` y el 412
+  en `PUT /event-types/{name}/schema`, y el ETag en las respuestas. La
+  colección se regeneró: si no, el workflow de contratos falla a propósito,
+  porque la colección versionada ya no coincide con el contrato en ejecución.
+- **7 casos nuevos para DEF-18 (175 en total):**
+  - ET-14: `GET` devuelve un ETag fuerte.
+  - ET-15: `PUT` con `If-Match` vigente aplica y devuelve un ETag nuevo.
+  - ET-16: con `If-Match` desactualizado responde 412 `PRECONDITION_FAILED`.
+  - ET-17: verifica que el 412 no aplicó nada.
+  - ET-18: un módulo ajeno recibe 403 y no 412, aunque su `If-Match` sea
+    vigente.
+  - ET-19: un ETag débil `W/` nunca coincide.
+  - ET-20: `If-Match: *` aplica.
+
+  ET-06 queda como el caso sin `If-Match`, que se acepta por compatibilidad.
+- **`escenarios_amqp.py` declara el modo de DEF-19**
+  (`CORE_EXPECT_SOURCE_CHECK`) y puede enviar `user_id`. En `enforce` no
+  aplica: la regresión de ese modo es `escenarios_def19.py`.
+
+### Resultados
+
+| Ejecución | Entorno | Resultado |
+| --- | --- | --- |
+| Colección | Nativo: PostgreSQL 17.10, RabbitMQ 4.3.4, worker en `warn` | 175 de 175 (184 requests, 650 aserciones), 56 de 56 operaciones |
+| Escenarios AMQP, `warn`, con `user_id` | Mismo stack | 11 de 11. AMQP-06 aceptado: en `warn` DEF-19 no está mitigado, y el worker registró `amqp_source_unverified_accepted` |
+| DEF-19, `enforce`, usuarios RabbitMQ restringidos | Mismo stack, worker reiniciado en `enforce` | 8 de 8 en dos corridas (ver [def19-identidad-amqp.md](def19-identidad-amqp.md)) |
+| Colección y AMQP en Docker | Workflow "Core API contracts" sobre esta rama, worker en `warn` | Ver el PR de esta revalidación |
+
+### Contraste con el OpenAPI de `342b0b1`
+
+Las dos categorías dan lo mismo que en `16d1633`: 13 operaciones con el 422
+documentado que no coincide y 33 con status reales sin declarar. Además, DEF-18
+agrega dos diferencias:
+
+- El 412 está declarado con `application/problem+json`, pero **sin schema**.
+- El header `ETag` de las respuestas 200 de `GET /event-types/{name}` y `PUT
+  /event-types/{name}/schema` **no está documentado**. La colección lo verifica
+  igual (ET-14, ET-15 y ET-17).
+
+Siguen abiertas: la colección valida lo que la API hace hoy, no las resuelve.
+
 ## Revisión probada
 
 La rama `qa/t6-candidata-16d1633` agrega a `16d1633` solo `docs/testing/`, el

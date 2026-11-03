@@ -83,6 +83,18 @@ escenarios de [escenarios_amqp.py](api/escenarios_amqp.py) publican sin
 `user_id`, así que valen solo en `warn` u `off`; en `enforce`, el reemplazo es
 este script.
 
+### Sobre la integración `342b0b1`
+
+En la revisión integrada (`devops/t8-integracion-pr19-22`), sobre PostgreSQL
+17.10 y RabbitMQ 4.3.4:
+
+- Con el worker en `enforce` y los mismos usuarios restringidos, la regresión
+  dio 8 de 8 en dos corridas.
+- Con el worker en `warn`, los 11 escenarios de `escenarios_amqp.py` pasaron.
+  AMQP-06 fue aceptado y el worker registró `amqp_source_unverified_accepted`:
+  ese modo no mitiga.
+- La suite de pytest de la integración la ejecutó T8 (exit code 0).
+
 ## Lo que hay que definir con DevOps
 
 1. **Esquema de identidades.** En el entorno local existe solo el usuario

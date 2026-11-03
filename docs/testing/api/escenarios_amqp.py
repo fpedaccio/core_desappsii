@@ -10,6 +10,13 @@ desactiva. Uso, desde la raiz del repo y con el venv del backend:
     CORE_ADMIN_PASSWORD=... \\
     python docs/testing/api/escenarios_amqp.py
 
+`CORE_EXPECT_SOURCE_CHECK` indica el modo del worker (DEF-19): `warn` (por
+defecto) u `off`. En `enforce` estos escenarios no aplican, porque sus modulos
+se crean con nombre al azar y no se pueden vincular en AMQP_IDENTITIES: la
+regresion de ese modo es `escenarios_def19.py`. Con `CORE_AMQP_USER_ID`, los
+mensajes llevan esa propiedad `user_id` (tiene que ser el usuario de la
+conexion, o RabbitMQ rechaza la publicacion).
+
 Imprime una tabla Markdown con esperado/observado por caso. No imprime tokens,
 secrets ni contrasenas. Termina con codigo 1 si algun caso falla.
 """
@@ -31,6 +38,8 @@ API = ROOT + "/api/v1"
 AMQP_URL = os.environ["CORE_AMQP_URL"]
 ADMIN_EMAIL = os.environ.get("CORE_ADMIN_EMAIL", "core@muni.uade.edu.ar")
 ADMIN_PASSWORD = os.environ["CORE_ADMIN_PASSWORD"]
+MODO = os.environ.get("CORE_EXPECT_SOURCE_CHECK", "warn")
+USER_ID = os.environ.get("CORE_AMQP_USER_ID") or None
 
 SCHEMA = {
     "type": "object",
@@ -69,6 +78,9 @@ def sobre(event_id: str, event_type: str, source: str, data: dict) -> dict:
 
 
 async def main() -> int:
+    if MODO not in {"warn", "off"}:
+        print(f"Modo {MODO}: estos escenarios no aplican. Usar escenarios_def19.py.")
+        return 2
     run = format(int(time.time()), "x")[-6:]
     mod_a, mod_b = f"qa-amqp-{run}-a", f"qa-amqp-{run}-b"
     tipo = f"qaAmqp{run}Flow"
@@ -117,6 +129,7 @@ async def main() -> int:
                         cuerpo,
                         content_type="application/json",
                         message_id=message_id,
+                        user_id=USER_ID,
                         delivery_mode=aio_pika.DeliveryMode.PERSISTENT,
                     ),
                     routing_key="",
@@ -183,8 +196,8 @@ async def main() -> int:
             id3 = str(uuid.uuid4())
             await publicar(json.dumps(sobre(id3, tipo, mod_b, {"marker": "amqp-origen", "quantity": 1})).encode(), id3)
             e3 = await esperar(lambda: evento(id3))
-            caso("AMQP-06", "OBSERVACION: por AMQP se acepta un sourceModule cualquiera",
-                 "aceptado (comportamiento actual: no se contrasta con el usuario de la conexion)",
+            caso("AMQP-06", f"DEF-19 en modo {MODO}: se acepta un sourceModule ajeno",
+                 "aceptado: en warn/off DEF-19 no esta mitigado (en enforce ver escenarios_def19.py)",
                  e3 and (e3["sourceModule"], e3["status"]), bool(e3) and e3["sourceModule"] == mod_b)
             await asyncio.sleep(1)
             sobrante = await cola.get(no_ack=False, fail=False)
@@ -267,7 +280,8 @@ async def main() -> int:
     print("| --- | --- | --- | --- | --- |")
     for cid, titulo, esperado, observado, ok in resultados:
         print(f"| {cid} | {titulo} | {esperado} | `{observado}` | {'PASS' if ok else 'FAIL'} |")
-    print(f"\nFixture: {mod_a}, {mod_b}; tipo {tipo}. Modulos desactivados al terminar.")
+    print(f"\nModo DEF-19: {MODO}; user_id: {'si' if USER_ID else 'no'}.")
+    print(f"Fixture: {mod_a}, {mod_b}; tipo {tipo}. Modulos desactivados al terminar.")
     return 0 if all(r[4] for r in resultados) else 1
 
 
