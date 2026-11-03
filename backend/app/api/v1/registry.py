@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Header, Query, Response, status
 
 from app.api.deps import AdminDep, AuthDep, CallerDep, RegistryDep, StatsDep
 from app.api.v1.schemas.common import MessageResponse, PageResponse
@@ -28,8 +28,19 @@ from app.api.v1.schemas.dto import (
     SubscriptionResponse,
     TopologyResponse,
 )
+from app.core.etag import event_type_etag
 
 router = APIRouter(tags=["Registry"])
+
+PRECONDITION_FAILED_DOC = {
+    412: {
+        "description": (
+            "If-Match desactualizado: el tipo cambio despues de leerlo. No se aplico "
+            "nada; hay que volver a pedirlo y reintentar con el ETag nuevo."
+        ),
+        "content": {"application/problem+json": {}},
+    }
+}
 
 
 # ----------------------------------------------------------------------
@@ -160,9 +171,17 @@ async def event_type_map(caller: CallerDep, stats: StatsDep) -> list[EventTypeMa
     "/event-types/{name}",
     response_model=EventTypeResponse,
     summary="Ver un tipo de evento",
+    description=(
+        "Devuelve el encabezado `ETag` con la version editable del tipo. Para cambiar "
+        "el schema sin pisar a otro, mandalo en `If-Match` del PUT."
+    ),
 )
-async def get_event_type(name: str, caller: CallerDep, registry: RegistryDep) -> EventTypeResponse:
-    return EventTypeResponse.of(await registry.get_event_type(name))
+async def get_event_type(
+    name: str, response: Response, caller: CallerDep, registry: RegistryDep
+) -> EventTypeResponse:
+    event_type = await registry.get_event_type(name)
+    response.headers["ETag"] = event_type_etag(event_type)
+    return EventTypeResponse.of(event_type)
 
 
 @router.post(
@@ -204,18 +223,35 @@ async def declare_event_type(
         "Define el JSON Schema con el que se valida el `data` de este tipo. "
         "Mandar `null` desactiva la validacion y el evento vuelve a pasar sin mirar.\n\n"
         "**Solo el dueño del tipo** (o el administrador): el schema decide que se "
-        "acepta y que se va a la DLQ para todos los que publican ese evento."
+        "acepta y que se va a la DLQ para todos los que publican ese evento.\n\n"
+        "**Concurrencia:** mandar `If-Match` con el `ETag` del GET. Si otro cambio el "
+        "tipo en el medio, responde 412 y no aplica nada. La respuesta trae el `ETag` nuevo.\n\n"
+        "**Sin `If-Match` no hay proteccion contra actualizaciones concurrentes:** el "
+        "cambio se aplica igual, por compatibilidad con los clientes actuales, y gana la "
+        "ultima escritura."
     ),
+    responses=PRECONDITION_FAILED_DOC,
 )
 async def set_schema(
-    name: str, payload: SchemaUpdate, caller: CallerDep, registry: RegistryDep
+    name: str,
+    payload: SchemaUpdate,
+    response: Response,
+    caller: CallerDep,
+    registry: RegistryDep,
+    if_match: str | None = Header(
+        default=None,
+        alias="If-Match",
+        description="ETag obtenido en GET /event-types/{name}.",
+    ),
 ) -> EventTypeResponse:
     event_type = await registry.set_schema(
         name,
         json_schema=payload.json_schema,
         actor_module=caller.module,
         actor_is_admin=caller.is_admin,
+        if_match=if_match,
     )
+    response.headers["ETag"] = event_type_etag(event_type)
     return EventTypeResponse.of(event_type)
 
 
