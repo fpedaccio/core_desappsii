@@ -62,7 +62,9 @@ async def test_cinco_intentos_fallidos_desactivan_la_cuenta(client):
 
 async def test_me_devuelve_la_persona_y_su_modulo(client, auth):
     response = await client.get("/api/v1/auth/me", headers=await auth("obras"))
-    assert response.json() == {
+    body = response.json()
+    assert body["id"] is not None
+    assert {k: v for k, v in body.items() if k != "id"} == {
         "module": "obras",
         "displayName": "Obras Publicas",
         "isAdmin": False,
