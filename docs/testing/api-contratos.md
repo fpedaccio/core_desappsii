@@ -43,7 +43,7 @@ conservan.
 | Colección | Nativo: PostgreSQL 17.10, RabbitMQ 4.3.4, worker en `warn` | 175 de 175 (184 requests, 650 aserciones), 56 de 56 operaciones |
 | Escenarios AMQP, `warn`, con `user_id` | Mismo stack | 11 de 11. AMQP-06 aceptado: en `warn` DEF-19 no está mitigado, y el worker registró `amqp_source_unverified_accepted` |
 | DEF-19, `enforce`, usuarios RabbitMQ restringidos | Mismo stack, worker reiniciado en `enforce` | 8 de 8 en dos corridas (ver [def19-identidad-amqp.md](def19-identidad-amqp.md)) |
-| Colección y AMQP en Docker | Workflow "Core API contracts" sobre esta rama, worker en `warn` | Ver el PR de esta revalidación |
+| Colección y AMQP en Docker, 3 corridas consecutivas | Workflow "Core API contracts", stack limpio con `testing_up.py`, worker en `warn` ([run 41560420733](https://github.com/fpedaccio/core_desappsii/actions/runs/41560420733), commit `ec6e618`) | 175 de 175 y 11 de 11 en las tres corridas. Backend CI y los 6 E2E de navegador también pasaron sobre ese commit |
 
 ### Contraste con el OpenAPI de `342b0b1`
 
