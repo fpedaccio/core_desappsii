@@ -63,7 +63,10 @@ async def _visible_dead_letter(
         "- `DELIVERY_FAILED`: el modulo destino agoto sus intentos. Cuando vuelve, "
         "se reintenta.\n"
         "- `MALFORMED_MESSAGE`: no era JSON valido. **No se puede reintentar**, hay "
-        "que descartarlo con motivo."
+        "que descartarlo con motivo.\n"
+        "- `SOURCE_UNVERIFIED`: llego por AMQP y su `sourceModule` no corresponde al "
+        "usuario que lo publico. **No se puede reintentar**: lo tiene que publicar "
+        "el modulo que corresponde."
     ),
 )
 async def list_dead_letters(
