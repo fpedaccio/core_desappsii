@@ -141,6 +141,27 @@ class BootstrapTests(unittest.TestCase):
         self.assertNotIn("CORE_HTTP_PORT", environment)
         self.assertNotIn("APP_DB_PASSWORD", environment)
 
+    def test_extra_env_passes_only_integration_identity(self):
+        with patch.dict(os.environ, {
+            "CORE_HTTP_PORT": "443",
+            "IT_TEST_USER": "999:999",
+        }):
+            with patch.object(startup.subprocess, "run", return_value=SimpleNamespace(stdout="")) as command:
+                self.runner.run(
+                    ["docker", "compose", "config"],
+                    extra_env={"IT_TEST_USER": "1000:1000"},
+                )
+        environment = command.call_args.kwargs["env"]
+        self.assertEqual(environment["IT_TEST_USER"], "1000:1000")
+        self.assertNotIn("CORE_HTTP_PORT", environment)
+
+    def test_extra_env_rejects_other_overrides(self):
+        with self.assertRaisesRegex(ValueError, "Only the integration"):
+            self.runner.run(
+                ["docker", "compose", "config"],
+                extra_env={"CORE_HTTP_PORT": "443"},
+            )
+
     def test_remote_docker_context_is_rejected(self):
         with patch.object(self.runner, "run", return_value=json.dumps("ssh://remote-server")):
             with self.assertRaisesRegex(RuntimeError, "remote"):

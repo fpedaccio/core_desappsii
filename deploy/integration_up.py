@@ -23,11 +23,24 @@ class IntegrationRunner(Bootstrap):
         self.state = self.deploy / ".integration"
 
     def compose(self, *args: str, capture: bool = False) -> str:
-        return self.run([
+        if hasattr(os, "getuid"):
+            if os.getuid() == 0:
+                raise RuntimeError(
+                    "Integration tests must run as a non-root host user."
+                )
+            identity = f"{os.getuid()}:{os.getgid()}"
+        else:
+            identity = "10001:10001"
+        command = [
             "docker", "compose", "--project-name", PROJECT,
             "--env-file", str(self.state / ".env"),
             "-f", str(self.deploy / "compose.integration.yaml"), *args,
-        ], capture=capture)
+        ]
+        return self.run(
+            command,
+            capture=capture,
+            extra_env={"IT_TEST_USER": identity},
+        )
 
     def prepare(self) -> None:
         env = self.state / ".env"
@@ -47,11 +60,12 @@ class IntegrationRunner(Bootstrap):
         values = read_env(env)
         if any(not values.get(name) for name in PASSWORDS) or values.get("IT_EVIDENCE_PATH") != evidence.as_posix():
             raise RuntimeError("Integration config incomplete or moved; nothing was overwritten.")
-        # Linux containers write as uid 10001; this directory contains synthetic reports only.
-        os.chmod(evidence, 0o777)
+        # The container uses the host UID/GID on Linux and Docker Desktop
+        # supports the bind mount on Windows without world-writable permissions.
+        os.chmod(evidence, 0o700)
 
     def start(self) -> None:
-        for name in (*PASSWORDS, "IT_EVIDENCE_PATH"):
+        for name in (*PASSWORDS, "IT_EVIDENCE_PATH", "IT_TEST_USER"):
             os.environ.pop(name, None)
         if not shutil.which("docker") or not shutil.which("git"):
             raise RuntimeError("Install Git and start local Docker with Compose first.")
