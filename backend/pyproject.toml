@@ -12,7 +12,7 @@ description = "Modulo Core de la plataforma municipal distribuida: identidad, in
 requires-python = ">=3.12"
 
 dependencies = [
-    "fastapi>=0.115",
+    "fastapi>=0.121",
     "uvicorn[standard]>=0.34",
     "pydantic[email]>=2.9",
     "pydantic-settings>=2.5",
