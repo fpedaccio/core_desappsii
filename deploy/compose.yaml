@@ -101,6 +101,10 @@ services:
         max-size: "10m"
         max-file: "3"
     <<: *app
+    environment:
+      <<: *environment
+      AMQP_SOURCE_CHECK: ${AMQP_SOURCE_CHECK:-warn}
+      AMQP_IDENTITIES: ${AMQP_IDENTITIES:-}
     command: ["python", "-m", "app.workers.inbox_worker"]
     depends_on:
       api:
