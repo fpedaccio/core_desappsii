@@ -43,7 +43,13 @@ class Bootstrap:
             raise RuntimeError("Testing startup exceeded 15 minutes; G1 is not verified.")
         return value
 
-    def run(self, args: list[str], *, capture: bool = False) -> str:
+    def run(
+        self,
+        args: list[str],
+        *,
+        capture: bool = False,
+        extra_env: dict[str, str] | None = None,
+    ) -> str:
         environment = os.environ.copy()
         # Shell variables have precedence over --env-file in Compose. Do not let
         # a production shell redirect this testing stack's credentials or paths.
@@ -52,6 +58,10 @@ class Bootstrap:
             "CORE_FRONTEND_PATH", "JWT_PRIVATE_KEY_PATH", "CORS_ORIGINS",
         }:
             environment.pop(name, None)
+        if extra_env:
+            if set(extra_env) - {"IT_TEST_USER"}:
+                raise ValueError("Only the integration test identity may be overridden.")
+            environment.update(extra_env)
         result = subprocess.run(
             args, cwd=self.repo, check=True, text=True,
             stdout=subprocess.PIPE if capture else None, timeout=self.remaining(), env=environment,

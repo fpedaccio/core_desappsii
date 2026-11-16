@@ -30,6 +30,7 @@ services:
       retries: 30
 
   tests:
+    user: ${IT_TEST_USER:-10001:10001}
     build:
       context: ../backend
       dockerfile: Dockerfile.integration
