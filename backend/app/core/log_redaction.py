@@ -4,10 +4,15 @@ import re
 from typing import Any
 
 REDACTED = "[REDACTED]"
-_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+# Los cuantificadores que preceden a un separador (`@`, `://`) estan acotados:
+# sin tope, el motor los reintenta desde cada posicion y el costo es cuadratico
+# en lineas largas (Sonar S-02, python:S8786). Email: limites del RFC 5321 (64
+# de parte local, 63 por etiqueta). Esquema de URL: 32 caracteres; si fuera mas
+# largo, el match empieza mas adelante y la credencial se tapa igual.
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]{1,64}@(?:[A-Za-z0-9-]{1,63}\.){1,10}[A-Za-z]{2,63}")
 _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*")
 _BEARER = re.compile(r"""(Bearer\s+)[^\s"'<>]+""", re.IGNORECASE)
-_USERINFO = re.compile(r"([a-z][a-z0-9+.-]*://)[^/\s@]+@", re.IGNORECASE)
+_USERINFO = re.compile(r"([a-z][a-z0-9+.-]{0,31}://)[^/\s@]+@", re.IGNORECASE)
 _PRIVATE_KEY = re.compile(
     r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?"
     r"-----END [A-Z0-9 ]*PRIVATE KEY-----",

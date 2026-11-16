@@ -3,6 +3,7 @@
 import copy
 import io
 import json
+import time
 
 import pytest
 import structlog
@@ -24,6 +25,31 @@ def test_email_redacted_from_field_actor_and_message():
     })
     assert "qa-person@example.com" not in json.dumps(result)
     assert result["trace_id"] == "synthetic-trace-123"
+
+
+@pytest.mark.parametrize("text", [
+    "a" * 100_000,  # sin arroba
+    "x@" + "a." * 50_000 + "!",  # dominio sin TLD
+    "a@" * 50_000,  # muchas arrobas
+], ids=["sin-arroba", "dominio-sin-tld", "muchas-arrobas"])
+def test_email_redaction_is_linear_on_pathological_lines(text):
+    """S-02: con las regex anteriores (email y credenciales en URL) una linea de
+    100.000 caracteres tardaba hasta 30 s."""
+    started = time.perf_counter()
+    clean({"event": text})
+    assert time.perf_counter() - started < 1.0
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("core@muni.uade.edu.ar", REDACTED),
+    ("x.y+tag@sub.dominio.com.ar.", REDACTED + "."),
+    ("<A.B_C%d@EXAMPLE.ORG>", "<" + REDACTED + ">"),
+    ("dos: a@b.io, c@d.co", f"dos: {REDACTED}, {REDACTED}"),
+    ("user@localhost", "user@localhost"),
+    ("x" * 40 + "proto://u:p@h", "x" * 40 + "proto://" + REDACTED + "@h"),
+])
+def test_email_redaction_keeps_matching_regular_addresses(text, expected):
+    assert clean({"event": text})["event"] == expected
 
 
 @pytest.mark.parametrize("key", [
