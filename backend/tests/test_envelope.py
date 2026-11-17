@@ -56,11 +56,22 @@ def test_rechaza_campos_extra_en_el_sobre():
         EventEnvelope.model_validate({**VALID, "prioridad": "ALTA"})
 
 
-@pytest.mark.parametrize("field", ["eventId", "eventType", "occurredAt", "sourceModule"])
+@pytest.mark.parametrize("field", ["eventId", "eventType", "occurredAt", "sourceModule", "data"])
 def test_exige_los_campos_minimos(field):
     payload = {k: v for k, v in VALID.items() if k != field}
     with pytest.raises(ValidationError):
         EventEnvelope.model_validate(payload)
+
+
+def test_data_nulo_no_cuenta_como_carga_util():
+    """DEF-06: `data: null` es lo mismo que no mandarlo."""
+    with pytest.raises(ValidationError):
+        EventEnvelope.model_validate({**VALID, "data": None})
+
+
+def test_data_vacio_se_acepta():
+    """Se exige que el campo este; un objeto vacio es una carga util valida."""
+    assert EventEnvelope.model_validate({**VALID, "data": {}}).data == {}
 
 
 @pytest.mark.parametrize("value", ["", "   "])

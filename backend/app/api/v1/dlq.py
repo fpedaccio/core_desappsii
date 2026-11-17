@@ -8,13 +8,14 @@ from fastapi import APIRouter, Query
 
 from app.api.deps import (
     AdminDep,
+    Caller,
     CallerDep,
     DeadLetterRepoDep,
     DeliveryDep,
     DeliveryRepoDep,
     RetryAuditRepoDep,
 )
-from app.api.v1.schemas.common import MessageResponse, PageResponse
+from app.api.v1.schemas.common import MessageResponse, PageResponse, problem_responses
 from app.api.v1.schemas.dto import (
     BulkRetryRequest,
     BulkRetryResponse,
@@ -26,9 +27,27 @@ from app.api.v1.schemas.dto import (
     RetryResultResponse,
 )
 from app.core.errors import NotFoundError
-from app.models.events import DeadLetterStatus, DeliveryStatus
+from app.models.events import DeadLetter, DeadLetterStatus, DeliveryStatus
+from app.repositories.event_repository import DeadLetterRepository
 
-router = APIRouter(tags=["DLQ y entregas"])
+router = APIRouter(tags=["DLQ y entregas"], responses=problem_responses(401))
+
+
+async def _visible_dead_letter(
+    dead_letter_id: uuid.UUID, caller: Caller, dead_letter_repo: DeadLetterRepository
+) -> DeadLetter:
+    """La dead letter, si el que llama puede verla.
+
+    Un modulo ve las que lo involucran (como origen o destino); el admin, todas.
+    Si no la puede ver responde 404, igual que si no existiera, para no revelar
+    que existe. Es la misma regla para el detalle, la auditoria y el reintento.
+    """
+    dead_letter = await dead_letter_repo.get_with_retries(dead_letter_id)
+    if dead_letter is None or (
+        caller.scope and caller.scope not in {dead_letter.source_module, dead_letter.target_module}
+    ):
+        raise NotFoundError(f"No existe la dead letter {dead_letter_id}.")
+    return dead_letter
 
 
 @router.get(
@@ -44,7 +63,10 @@ router = APIRouter(tags=["DLQ y entregas"])
         "- `DELIVERY_FAILED`: el modulo destino agoto sus intentos. Cuando vuelve, "
         "se reintenta.\n"
         "- `MALFORMED_MESSAGE`: no era JSON valido. **No se puede reintentar**, hay "
-        "que descartarlo con motivo."
+        "que descartarlo con motivo.\n"
+        "- `SOURCE_UNVERIFIED`: llego por AMQP y su `sourceModule` no corresponde al "
+        "usuario que lo publico. **No se puede reintentar**: lo tiene que publicar "
+        "el modulo que corresponde."
     ),
 )
 async def list_dead_letters(
@@ -74,27 +96,21 @@ async def list_dead_letters(
 @router.get(
     "/dlq/{dead_letter_id}",
     response_model=DeadLetterDetailResponse,
+    responses=problem_responses(404),
     summary="Detalle de una dead letter",
     description="Con el payload crudo, el detalle del error y el historial de reintentos.",
 )
 async def get_dead_letter(
     dead_letter_id: uuid.UUID, caller: CallerDep, dead_letter_repo: DeadLetterRepoDep
 ) -> DeadLetterDetailResponse:
-    dead_letter = await dead_letter_repo.get_with_retries(dead_letter_id)
-    if dead_letter is None:
-        raise NotFoundError(f"No existe la dead letter {dead_letter_id}.")
-
-    if caller.scope and caller.scope not in {
-        dead_letter.source_module,
-        dead_letter.target_module,
-    }:
-        raise NotFoundError(f"No existe la dead letter {dead_letter_id}.")
+    dead_letter = await _visible_dead_letter(dead_letter_id, caller, dead_letter_repo)
     return DeadLetterDetailResponse.of_detail(dead_letter)
 
 
 @router.post(
     "/dlq/{dead_letter_id}/retry",
     response_model=RetryResultResponse,
+    responses=problem_responses(404, 409),
     summary="Reintentar",
     description=(
         "El Core elige el camino segun la causa, no hace falta decidirlo:\n\n"
@@ -102,12 +118,18 @@ async def get_dead_letter(
         "hay que pedirle al modulo origen que lo publique de nuevo.\n"
         "- **`DELIVERY_FAILED`**: republica en la cola del destino con el contador "
         "de intentos reiniciado.\n\n"
-        "Queda auditado con el modulo que lo disparo."
+        "Lo puede pedir el administrador o un modulo involucrado (origen o destino). "
+        "Para cualquier otro modulo responde 404. Queda auditado con la persona (o "
+        "el modulo) que lo disparo."
     ),
 )
 async def retry_dead_letter(
-    dead_letter_id: uuid.UUID, admin: AdminDep, delivery: DeliveryDep
+    dead_letter_id: uuid.UUID,
+    caller: CallerDep,
+    dead_letter_repo: DeadLetterRepoDep,
+    delivery: DeliveryDep,
 ) -> RetryResultResponse:
+    await _visible_dead_letter(dead_letter_id, caller, dead_letter_repo)
     outcome = await delivery.retry_dead_letter(dead_letter_id)
     return RetryResultResponse(
         dead_letter_id=outcome.dead_letter_id,
@@ -120,6 +142,7 @@ async def retry_dead_letter(
 @router.post(
     "/dlq/retry-bulk",
     response_model=BulkRetryResponse,
+    responses=problem_responses(403),
     summary="Reintento masivo",
     description=(
         "Hasta 200 dead letters. Cada una se audita por separado y un fallo no "
@@ -149,6 +172,7 @@ async def retry_bulk(
 @router.post(
     "/dlq/{dead_letter_id}/discard",
     response_model=DeadLetterResponse,
+    responses=problem_responses(403, 404, 409),
     summary="Descartar con motivo",
     description=(
         "El motivo es **obligatorio** y queda en la auditoria. El registro se "
@@ -168,18 +192,24 @@ async def discard_dead_letter(
 @router.get(
     "/dlq/{dead_letter_id}/audit",
     response_model=PageResponse[RetryAuditResponse],
+    responses=problem_responses(404),
     summary="Auditoria de reintentos",
     description=(
-        "Cada intento (automatico o manual) con quien lo hizo, cuando y que resultado dio."
+        "Cada intento (automatico o manual) con quien lo hizo, cuando y que resultado dio. "
+        "Misma visibilidad que el detalle: 404 si la dead letter no involucra al modulo."
     ),
 )
 async def dead_letter_audit(
     dead_letter_id: uuid.UUID,
     caller: CallerDep,
+    dead_letter_repo: DeadLetterRepoDep,
     retry_audit_repo: RetryAuditRepoDep,
     page: int = Query(default=1, ge=1),
     size: int = Query(default=25, ge=1, le=200),
 ) -> PageResponse[RetryAuditResponse]:
+    # Sin este control, cualquier modulo con el id leia el historial ajeno,
+    # incluido el email de quien reintento (BOLA).
+    await _visible_dead_letter(dead_letter_id, caller, dead_letter_repo)
     result = await retry_audit_repo.search(dead_letter_id=dead_letter_id, page=page, size=size)
     return PageResponse.build(result, RetryAuditResponse.of)
 
@@ -217,6 +247,7 @@ async def list_deliveries(
 @router.post(
     "/deliveries/process-due-retries",
     response_model=MessageResponse,
+    responses=problem_responses(403),
     summary="Completar reintentos vencidos",
     description=(
         "Solo el administrador. Completa las entregas que quedaron pendientes "

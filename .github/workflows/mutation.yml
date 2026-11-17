@@ -1,0 +1,113 @@
+name: Mutation testing
+
+# Tarda horas: corre solo a mano o con push a la rama de medicion, nunca en
+# cada PR. Mide el mismo alcance, formula y seleccion documentados en
+# docs/testing/calidad-mutacion.md.
+on:
+  workflow_dispatch:
+  push:
+    branches: [qa/t6-mutacion-ci]
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    name: Backend - Mutation score
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install locked dependencies and mutmut
+        # pytest 9 no es compatible con el plugin de estadisticas de mutmut 3.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-deploy.lock "pytest==8.3.5" "pytest-asyncio==0.26.0" "aiosqlite>=0.20" "mutmut==3.7.0"
+
+      - name: Configure scope
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          scope = {
+              "app/services/envelope.py", "app/services/validation.py",
+              "app/services/retry_policy.py", "app/services/auth_service.py",
+              "app/services/user_service.py", "app/services/registry_service.py",
+              "app/services/event_hub_service.py", "app/core/auth_rate_limit.py",
+          }
+          missing = [s for s in scope if not Path(s).exists()]
+          assert not missing, f"Scope files not found: {missing}"
+          others = sorted(str(p) for p in Path("app").rglob("*.py") if str(p) not in scope)
+          Path("setup.cfg").write_text(
+              "[mutmut]\npaths_to_mutate=app/\ntests_dir=tests/\ndo_not_mutate="
+              + "\n    ".join(others) + "\n"
+          )
+          print(f"{len(scope)} modules in scope, {len(others)} excluded")
+          PY
+
+      - name: Pass 1 - automatic test selection
+        run: |
+          mutmut run 'app.services.envelope*' 'app.services.validation*' \
+            'app.services.retry_policy*' 'app.services.user_service*' \
+            'app.services.registry_service*' 'app.services.event_hub_service*' \
+            'app.services.auth_service.x_*' 'app.services.auth_service.xǁAuthServiceǁ[!l]*'
+
+      - name: Pass 2 - restricted selection for login and the limiter
+        run: |
+          python ../docs/testing/calidad/restringir_seleccion.py mutants/mutmut-stats.json
+          mutmut run 'app.services.auth_service.xǁAuthServiceǁlogin*' 'app.core.auth_rate_limit*'
+
+      - name: Compute score
+        if: always()
+        run: |
+          python - <<'PY' | tee mutation-summary.md
+          import collections
+          import glob
+          import json
+          import os
+
+          total = collections.Counter()
+          print(f"Commit: {os.environ['GITHUB_SHA']}\n")
+          print("| Modulo | Mutantes | Muertos | Timeout | Sobreviven | Sin tests | Score |")
+          print("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+          for path in sorted(glob.glob("mutants/app/**/*.py.meta", recursive=True)):
+              codes = json.load(open(path))["exit_code_by_key"]
+              c = collections.Counter(codes.values())
+              killed, survived, timeout, no_tests = c.get(1, 0), c.get(0, 0), c.get(-24, 0), c.get(33, 0)
+              pending = c.get(None, 0)
+              evaluable = killed + timeout + survived
+              score = 100 * (killed + timeout) / evaluable if evaluable else 0
+              print(f"| `{path[12:-5]}` | {len(codes)} | {killed} | {timeout} | {survived} | {no_tests} | {score:.2f}% |"
+                    + (f" pendientes: {pending}" if pending else ""))
+              total.update(killed=killed, survived=survived, timeout=timeout, no_tests=no_tests, n=len(codes), pending=pending)
+          evaluable = total["killed"] + total["timeout"] + total["survived"]
+          print(f"| **Total** | **{total['n']}** | **{total['killed']}** | **{total['timeout']}** | "
+                f"**{total['survived']}** | **{total['no_tests']}** | "
+                f"**{100 * (total['killed'] + total['timeout']) / evaluable:.2f}%** |")
+          if total["pending"]:
+              print(f"\nATENCION: {total['pending']} mutantes sin resultado; la medicion no esta completa.")
+          PY
+
+      - name: Upload mutation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            backend/mutation-summary.md
+            backend/setup.cfg
+            backend/mutants/mutmut-stats.json
+          if-no-files-found: warn
+          retention-days: 30

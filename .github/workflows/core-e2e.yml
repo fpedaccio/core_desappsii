@@ -1,0 +1,124 @@
+name: Core browser E2E
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-e2e:
+    name: Core - Six real-browser scenarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
+      GIT_TERMINAL_PROMPT: "0"
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Start isolated E2E stack
+        run: python3 deploy/e2e_up.py
+
+      - name: Verify candidate and fresh startup
+        run: |
+          python3 - <<'PYCODE'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads(
+              Path("deploy/.testing/bootstrap-result.json").read_text()
+          )
+          assert result["backend_ref"] == os.environ["TESTED_SHA"]
+          assert result["backend_dirty"] is False
+          assert result["frontend_ref"] == "d00f07b71aaa61d27adcb179ec5a3180e9e78874"
+          assert result["project"] == "muni-core-testing-e2e"
+          assert result["http_port"] == 18083
+          assert result["fresh_credentials_and_no_previous_volumes"] is True
+          assert result["ready"] is True
+          assert result["worker_consumers"] is True
+          print("Exact candidate and fresh E2E stack verified.")
+          PYCODE
+
+      - name: Prepare browser image
+        run: docker pull mcr.microsoft.com/playwright/python:v1.64.1-noble
+
+      - name: Run six browser scenarios
+        run: python3 deploy/e2e_run.py
+
+      - name: Verify all six scenarios passed
+        run: |
+          python3 - <<'PYCODE'
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          folders = [
+              path for path in Path("deploy/.testing/evidence").glob("e2e-*")
+              if path.is_dir()
+          ]
+          assert len(folders) == 1, "Expected one browser execution"
+          folder = folders[0]
+          result = json.loads((folder / "summary.json").read_text())
+          assert result["tests"] == 6
+          assert result["failures"] == 0
+          assert result["errors"] == 0
+          assert result["skipped"] == 0
+          assert result["passed"] is True
+          cases = list(
+              ET.parse(folder / "e2e.xml").getroot().iter("testcase")
+          )
+          assert len(cases) == 6
+          assert all(
+              case.find(tag) is None
+              for case in cases
+              for tag in ("failure", "error", "skipped")
+          )
+          observations = json.loads(
+              (folder / "csp-observations.json").read_text()
+          )
+          assert len(observations) == 6
+          assert all(not item["violations"] for item in observations)
+          print("Six browser scenarios passed without omissions or observed CSP violations.")
+          PYCODE
+
+      - name: Upload browser reports only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            deploy/.testing/bootstrap-result.json
+            deploy/.testing/evidence/e2e-*/summary.json
+            deploy/.testing/evidence/e2e-*/e2e.xml
+            deploy/.testing/evidence/e2e-*/run.json
+            deploy/.testing/evidence/e2e-*/browser-tests.log
+            deploy/.testing/evidence/e2e-*/execution.log
+            deploy/.testing/evidence/e2e-*/csp-observations.json
+            deploy/.testing/evidence/e2e-*/metrics-fonts.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop runner-local E2E stack
+        if: always()
+        run: |
+          if [ -f deploy/.testing/.env ]; then
+            docker compose --project-name muni-core-testing-e2e \
+              --env-file deploy/.testing/.env \
+              -f deploy/compose.yaml down
+          fi

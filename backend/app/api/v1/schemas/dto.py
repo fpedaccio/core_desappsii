@@ -79,6 +79,13 @@ class TokenResponse(CamelModel):
 
 
 class MeResponse(CamelModel):
+    id: uuid.UUID | None = Field(
+        default=None,
+        description=(
+            "Identificador de la cuenta cuando el token pertenece a una persona "
+            "(`kind='user'`); `null` para tokens de maquina (`kind='module'`)."
+        ),
+    )
     module: str
     display_name: str
     is_admin: bool
@@ -495,7 +502,10 @@ class DeadLetterResponse(CamelModel):
 
     @classmethod
     def of(cls, dead_letter: DeadLetter) -> DeadLetterResponse:
-        from app.services.event_hub_service import REASON_MALFORMED_MESSAGE
+        from app.services.event_hub_service import (
+            REASON_MALFORMED_MESSAGE,
+            REASON_SOURCE_UNVERIFIED,
+        )
 
         return cls(
             id=dead_letter.id,
@@ -515,7 +525,8 @@ class DeadLetterResponse(CamelModel):
             retry_count=len(dead_letter.retries),
             retryable=(
                 dead_letter.status == DeadLetterStatus.OPEN
-                and dead_letter.reason_code != REASON_MALFORMED_MESSAGE
+                and dead_letter.reason_code
+                not in {REASON_MALFORMED_MESSAGE, REASON_SOURCE_UNVERIFIED}
             ),
         )
 

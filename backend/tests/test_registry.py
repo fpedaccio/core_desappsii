@@ -73,6 +73,31 @@ async def test_el_admin_puede_suscribir_a_cualquiera(client, auth):
     assert response.json()["moduleName"] == "atencion-ciudadana"
 
 
+async def test_un_modulo_no_puede_pausar_la_suscripcion_de_otro(client, auth):
+    obras = await auth("obras")
+    subscription_id = (await client.get("/api/v1/subscriptions", headers=obras)).json()[0]["id"]
+
+    response = await client.post(
+        f"/api/v1/subscriptions/{subscription_id}/toggle?active=false",
+        headers=await auth("atencion-ciudadana"),
+    )
+
+    assert response.status_code == 403
+    assert (await client.get("/api/v1/subscriptions", headers=obras)).json()[0]["active"] is True
+
+
+async def test_un_modulo_no_puede_borrar_la_suscripcion_de_otro(client, auth):
+    obras = await auth("obras")
+    subscription_id = (await client.get("/api/v1/subscriptions", headers=obras)).json()[0]["id"]
+
+    response = await client.delete(
+        f"/api/v1/subscriptions/{subscription_id}", headers=await auth("atencion-ciudadana")
+    )
+
+    assert response.status_code == 403
+    assert len((await client.get("/api/v1/subscriptions", headers=obras)).json()) == 1
+
+
 async def test_pausar_una_suscripcion_deja_de_entregar(client, auth, make_envelope, broker):
     obras = await auth("obras")
     subscriptions = (await client.get("/api/v1/subscriptions", headers=obras)).json()
@@ -284,6 +309,15 @@ async def test_declarar_una_publicacion(client, auth):
     )
     assert response.status_code == 201
     assert response.json()["moduleName"] == "obras"
+
+
+async def test_un_modulo_no_puede_declarar_publicaciones_de_otro(client, auth):
+    response = await client.post(
+        "/api/v1/publications",
+        json={"eventType": "workOrderScheduled", "module": "atencion-ciudadana"},
+        headers=await auth("obras"),
+    )
+    assert response.status_code == 403
 
 
 async def test_publicar_sin_haberlo_declarado_funciona_igual(client, auth, make_envelope):

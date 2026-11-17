@@ -16,7 +16,9 @@ from app.core.errors import (
     ExternalUnavailableError,
     ForbiddenError,
     NotFoundError,
+    PreconditionFailedError,
 )
+from app.core.etag import event_type_etag, if_match_satisfied
 from app.messaging.broker import Broker
 from app.messaging.topology import Topology, full_topology
 from app.models.registry import EventType, ModuleAccount, Publication, Subscription
@@ -187,6 +189,7 @@ class RegistryService:
         json_schema: dict | None,
         actor_module: str | None = None,
         actor_is_admin: bool = False,
+        if_match: str | None = None,
     ) -> EventType:
         """Activa o quita la validacion de estructura de un tipo.
 
@@ -195,9 +198,24 @@ class RegistryService:
 
         Solo el dueño del tipo: un schema ajeno mal puesto manda a la DLQ a todos
         los productores de ese evento sin que su equipo se entere.
+
+        Con `if_match` (encabezado If-Match), el cambio solo se aplica si el tipo
+        no cambio desde que el cliente lo leyo; si cambio, 412 y no se toca nada.
+        Sin `if_match` se comporta como siempre (los modulos que ya lo usan no se rompen),
+        pero sin proteccion contra actualizaciones concurrentes: gana la ultima escritura.
         """
-        event_type = await self.get_event_type(name)
+        if if_match is None:
+            event_type = await self.get_event_type(name)
+        else:
+            event_type = await self.event_type_repo.get_by_name_for_update(name)
+            if event_type is None:
+                raise NotFoundError(f"No existe el tipo de evento '{name}'.")
         self._assert_owns_event_type(event_type, actor_module, actor_is_admin)
+        if if_match is not None and not if_match_satisfied(if_match, event_type_etag(event_type)):
+            raise PreconditionFailedError(
+                f"El tipo de evento '{name}' cambio despues de que lo leyeras. "
+                "Volve a pedirlo (GET) y reintenta con el ETag nuevo en If-Match.",
+            )
         if json_schema:
             assert_valid_schema(json_schema)
         event_type.json_schema = json_schema

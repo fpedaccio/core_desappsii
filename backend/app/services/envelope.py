@@ -56,7 +56,10 @@ class EventEnvelope(BaseModel):
     source_module: str = Field(alias="sourceModule", min_length=1, max_length=60)
     correlation_id: uuid.UUID | None = Field(default=None, alias="correlationId")
     causation_id: uuid.UUID | None = Field(default=None, alias="causationId")
-    data: dict[str, Any] = Field(default_factory=dict)
+    # Obligatorio, como ya dice el contrato publicado (docs/eventos.md): un sobre
+    # sin carga util se rechaza como invalido (HU-03). Un objeto vacio se acepta:
+    # lo que se exige es que el campo este, no su contenido.
+    data: dict[str, Any] = Field(description="Carga util del evento. Obligatoria.")
 
     @field_validator("occurred_at")
     @classmethod

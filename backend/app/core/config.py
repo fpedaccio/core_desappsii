@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -63,6 +64,18 @@ class Settings(BaseSettings):
     # entorno como JSON antes de que corra el validador que acepta CSV.
     retry_delays: Annotated[list[int], NoDecode] = Field(default=[5, 30, 120, 600])
 
+    # Identidad del publicador por AMQP (DEF-19). Por HTTP el modulo sale del
+    # token; por AMQP, del usuario de la conexion, que llega en la propiedad
+    # `user_id` del mensaje (ver app/services/source_identity.py).
+    #   off     no se comprueba.
+    #   warn    se registra la discrepancia y el evento se acepta: DEF-19 sigue
+    #           sin mitigar, sirve solo como transicion acordada.
+    #   enforce se rechaza a la DLQ (SOURCE_UNVERIFIED), sin entregas.
+    amqp_source_check: Literal["off", "warn", "enforce"] = "warn"
+    # Vinculo usuario AMQP -> modulo, como CSV `usuario=modulo` o JSON. Un
+    # usuario sin entrada no identifica a ningun modulo.
+    amqp_identities: Annotated[dict[str, str], NoDecode] = Field(default_factory=dict)
+
     # --- Seguridad --------------------------------------------------------
     # Sin claves configuradas se genera un par efimero al arrancar (solo dev):
     # los tokens dejan de valer al reiniciar. En produccion es obligatoria.
@@ -102,6 +115,25 @@ class Settings(BaseSettings):
             if stripped.startswith("["):
                 return value  # JSON, lo parsea pydantic
             return [item.strip() for item in stripped.split(",") if item.strip()]
+        return value
+
+    @field_validator("amqp_identities", mode="before")
+    @classmethod
+    def _parse_identities(cls, value: object) -> object:
+        """Acepta `usuario=modulo,otro=modulo` ademas de JSON."""
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.startswith("{"):
+                return {u.strip(): str(m).strip().lower() for u, m in json.loads(stripped).items()}
+            pares = {}
+            for item in stripped.split(","):
+                if not item.strip():
+                    continue
+                usuario, separador, modulo = item.partition("=")
+                if not separador or not usuario.strip() or not modulo.strip():
+                    raise ValueError(f"AMQP_IDENTITIES espera usuario=modulo, no '{item.strip()}'.")
+                pares[usuario.strip()] = modulo.strip().lower()
+            return pares
         return value
 
     @property

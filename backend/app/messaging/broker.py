@@ -45,6 +45,9 @@ class InboundMessage:
     raw: bytes
     headers: dict[str, Any] = field(default_factory=dict)
     redelivered: bool = False
+    # Propiedad `user_id` de AMQP: si viene, RabbitMQ ya comprobo que coincide
+    # con el usuario de la conexion. Es la identidad del publicador (DEF-19).
+    user_id: str | None = None
 
     def json(self) -> Any:
         """Parsea el cuerpo. Levanta `ValueError` si no es JSON."""

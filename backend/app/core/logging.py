@@ -10,6 +10,7 @@ import structlog
 
 from app.core.config import settings
 from app.core.context import get_actor, get_trace_id
+from app.core.log_redaction import redact_log_event
 
 
 def _add_context(_: Any, __: str, event_dict: dict[str, Any]) -> dict[str, Any]:
@@ -57,6 +58,7 @@ def configure_logging() -> None:
             _add_context,
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
+            redact_log_event,
             renderer,
         ],
         wrapper_class=structlog.make_filtering_bound_logger(level),

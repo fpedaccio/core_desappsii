@@ -90,6 +90,27 @@ async def test_rechaza_fecha_sin_zona_horaria(client, auth, make_envelope):
     assert response.json()["code"] == "VALIDATION_ERROR"
 
 
+async def test_un_evento_sin_data_se_rechaza_sin_persistir(client, auth, make_envelope):
+    """DEF-06 (HU-03): la carga util es obligatoria aunque el tipo no declare schema.
+
+    Antes respondia 202 y lo ruteaba. Ahora es un sobre invalido: 422, no se
+    guarda ni va a la DLQ, igual que si faltara cualquier otro campo del sobre.
+    """
+    headers = await auth("atencion-ciudadana")
+    sobre = make_envelope()
+    del sobre["data"]
+
+    response = await client.post("/api/v1/events", json=sobre, headers=headers)
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "VALIDATION_ERROR"
+    assert "data" in response.text
+    admin = await auth("core")
+    detalle = await client.get(f"/api/v1/events/{sobre['eventId']}", headers=admin)
+    assert detalle.status_code == 404
+    assert (await client.get("/api/v1/dlq", headers=admin)).json()["total"] == 0
+
+
 async def test_sin_token_no_se_publica(client, make_envelope):
     response = await client.post("/api/v1/events", json=make_envelope())
     assert response.status_code == 401

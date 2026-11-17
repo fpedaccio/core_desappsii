@@ -8,7 +8,7 @@ from datetime import datetime
 from fastapi import APIRouter, Query, Response, status
 
 from app.api.deps import CallerDep, EventLogRepoDep, HubDep, ModuleRepoDep
-from app.api.v1.schemas.common import PageResponse
+from app.api.v1.schemas.common import PageResponse, problem_responses
 from app.api.v1.schemas.dto import (
     EventDetailResponse,
     EventSummaryResponse,
@@ -44,8 +44,31 @@ router = APIRouter(tags=["Eventos"])
     ),
     responses={
         202: {"description": "Aceptado y ruteado"},
-        200: {"description": "Duplicado: ese eventId ya se habia procesado"},
-        422: {"description": "El sobre o el `data` no validan. El evento queda en la DLQ."},
+        200: {
+            "model": IngestResponse,
+            "description": (
+                "Duplicado: ese eventId ya se habia procesado; devuelve el estado "
+                "registrado con duplicate=true y sin efectos nuevos."
+            ),
+        },
+        **problem_responses(401, 403),
+        422: {
+            "description": (
+                "Dos casos diferenciados: (1) sobre invalido -> responde "
+                "`application/problem+json` (`ProblemDetails`) y **no se persiste**; "
+                "(2) `data` invalido contra el JSON Schema del `eventType` -> responde "
+                "`application/json` (`IngestResponse` con `status: REJECTED` y "
+                "`rejectionCode: SCHEMA_VIOLATION`), persiste el evento y lo registra en la DLQ."
+            ),
+            "content": {
+                "application/problem+json": {
+                    "schema": {"$ref": "#/components/schemas/ProblemDetails"}
+                },
+                "application/json": {
+                    "schema": {"$ref": "#/components/schemas/IngestResponse"}
+                },
+            },
+        },
     },
 )
 async def publish_event(
@@ -66,9 +89,9 @@ async def publish_event(
 
     result = await hub.ingest(envelope, channel=IngestionChannel.HTTP)
 
-    module = await module_repo.get_by_name(envelope.source_module)
-    if module is not None:
-        module.last_publish_at = utcnow()
+    await module_repo.record_publication(
+        envelope.source_module, published_at=utcnow()
+    )
 
     if result.duplicate:
         response.status_code = status.HTTP_200_OK
@@ -80,6 +103,7 @@ async def publish_event(
 @router.get(
     "/events",
     response_model=PageResponse[EventSummaryResponse],
+    responses=problem_responses(401),
     summary="Explorar la bitacora",
     description=(
         "Un modulo ve **solo su trafico**: lo que publico mas lo que le entregaron. "
@@ -90,10 +114,12 @@ async def publish_event(
 async def list_events(
     caller: CallerDep,
     event_log_repo: EventLogRepoDep,
-    query: str | None = Query(default=None, description="Busca por tipo o modulo origen"),
-    event_type: str | None = Query(default=None, alias="eventType"),
-    source_module: str | None = Query(default=None, alias="sourceModule"),
-    target_module: str | None = Query(default=None, alias="targetModule"),
+    query: str | None = Query(
+        default=None, pattern=r"^[^\x00]*$", description="Busca por tipo o modulo origen"
+    ),
+    event_type: str | None = Query(default=None, pattern=r"^[^\x00]*$", alias="eventType"),
+    source_module: str | None = Query(default=None, pattern=r"^[^\x00]*$", alias="sourceModule"),
+    target_module: str | None = Query(default=None, pattern=r"^[^\x00]*$", alias="targetModule"),
     status_filter: EventStatus | None = Query(default=None, alias="status"),
     correlation_id: uuid.UUID | None = Query(default=None, alias="correlationId"),
     since: datetime | None = Query(default=None),
@@ -120,6 +146,7 @@ async def list_events(
 @router.get(
     "/events/{event_id}",
     response_model=EventDetailResponse,
+    responses=problem_responses(401, 404),
     summary="Detalle de un evento",
     description=(
         "Por el `eventId` de negocio (el que mando el modulo). Trae el sobre "
@@ -141,6 +168,7 @@ async def get_event(
 @router.get(
     "/events/journey/{correlation_id}",
     response_model=JourneyResponse,
+    responses=problem_responses(401),
     summary="La journey completa",
     description=(
         "Todos los eventos que comparten un `correlationId`, en orden cronologico. "

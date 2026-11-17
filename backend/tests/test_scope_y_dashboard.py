@@ -62,7 +62,9 @@ async def test_cinco_intentos_fallidos_desactivan_la_cuenta(client):
 
 async def test_me_devuelve_la_persona_y_su_modulo(client, auth):
     response = await client.get("/api/v1/auth/me", headers=await auth("obras"))
-    assert response.json() == {
+    body = response.json()
+    assert body["id"] is not None
+    assert {k: v for k, v in body.items() if k != "id"} == {
         "module": "obras",
         "displayName": "Obras Publicas",
         "isAdmin": False,
@@ -175,6 +177,7 @@ async def test_el_dashboard_de_un_modulo_cuenta_lo_suyo(client, auth, make_envel
     dashboard = (await client.get("/api/v1/dashboard", headers=ac)).json()
     assert dashboard["module"] == "atencion-ciudadana"
     assert dashboard["published"]["total"] == 2
+    assert dashboard["published"]["topTypes"] == [{"eventType": "ticketCreated", "total": 2}]
     assert dashboard["publications"]["declared"] == ["ticketCreated"]
 
 
@@ -184,6 +187,8 @@ async def test_el_dashboard_cuenta_las_entregas_recibidas(client, auth, make_env
 
     obras = await auth("obras")
     dashboard = (await client.get("/api/v1/dashboard", headers=obras)).json()
+    assert dashboard["published"]["total"] == 0
+    assert dashboard["published"]["topTypes"] == []
     assert dashboard["received"]["delivered"] == 1
     assert dashboard["subscriptions"]["eventTypes"] == ["ticketCreated"]
 

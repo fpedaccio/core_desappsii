@@ -181,7 +181,7 @@ Mismo pipeline que AMQP.
 | `202` | Aceptado y ruteado. `routedTo` dice a quién le llegó. | Nada. |
 | `200` | `duplicate: true` — ese `eventId` ya se procesó. | Nada. |
 | `403` | El `sourceModule` no es el tuyo, o el token venció. | Revisar. |
-| `422` | El sobre o el `data` no validan. `details` dice qué campo. | Corregir y reenviar **con el mismo `eventId`**. |
+| `422` | El sobre o el `data` no validan. `details` dice qué campo. | Si el `422` dejó el evento persistido como `REJECTED` (`SCHEMA_VIOLATION`), corregí y publicá con un **nuevo `eventId`** (o reintentá desde la DLQ si se ajustó el schema en el Core); si falló la validación previa del sobre antes de persistir el evento, ese `eventId` no quedó registrado. |
 | `503` | El broker no está disponible. | Reintentar con backoff. |
 
 **Un `422` no significa que el evento se perdió.** Queda guardado en la DLQ del

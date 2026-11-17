@@ -8,9 +8,9 @@ entra como admin y ve todo.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.models.events import (
@@ -155,7 +155,8 @@ class EventLogRepository(BaseRepository[EventLog]):
             .order_by(func.count().desc())
             .limit(limit)
         )
-        stmt = self._scoped(stmt, module_scope)
+        if module_scope:
+            stmt = stmt.where(EventLog.source_module == module_scope)
         if since:
             stmt = stmt.where(EventLog.received_at >= since)
         return [
@@ -181,13 +182,40 @@ class EventLogRepository(BaseRepository[EventLog]):
     ) -> list[dict]:
         """Volumen por hora, para el grafico del dashboard.
 
-        Se agrupa en Python: la funcion para truncar a la hora difiere entre
-        SQLite y PostgreSQL, y el volumen de una ventana de 24h es chico.
+        PostgreSQL agrupa en SQL y devuelve los totales por hora UTC.
+        Otros dialectos conservan la agrupacion portable en Python.
         """
         stmt = select(EventLog.received_at, EventLog.status)
         stmt = self._scoped(stmt, module_scope)
         if since:
             stmt = stmt.where(EventLog.received_at >= since)
+
+        if self.session.get_bind().dialect.name == "postgresql":
+            # Aggregate in PostgreSQL; preserve the existing module/time filters.
+            hour = func.date_trunc(
+                "hour", func.timezone("UTC", EventLog.received_at)
+            )
+            rejected = func.sum(
+                case((EventLog.status == EventStatus.REJECTED.value, 1), else_=0)
+            )
+            grouped = (
+                stmt.with_only_columns(
+                    hour.label("hour"),
+                    func.count().label("total"),
+                    rejected.label("rejected"),
+                )
+                .group_by(hour)
+                .order_by(hour)
+            )
+            rows = (await self.session.execute(grouped)).all()
+            return [
+                {
+                    "hour": bucket.replace(tzinfo=UTC).isoformat(),
+                    "total": int(total),
+                    "rejected": int(rejected_count),
+                }
+                for bucket, total, rejected_count in rows
+            ]
 
         buckets: dict[str, dict[str, int]] = {}
         for received_at, status in (await self.session.execute(stmt)).all():

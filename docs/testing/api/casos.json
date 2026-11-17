@@ -1,0 +1,1577 @@
+[
+  {
+    "id": "P01",
+    "titulo": "Login admin local",
+    "carpeta": "00 Preparacion de fixture",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/login",
+    "identidad": "sin token",
+    "espera": 200
+  },
+  {
+    "id": "P02",
+    "titulo": "Alta del modulo sintetico A",
+    "carpeta": "00 Preparacion de fixture",
+    "metodo": "POST",
+    "ruta": "/api/v1/modules",
+    "identidad": "tokenAdmin",
+    "espera": 201
+  },
+  {
+    "id": "P03",
+    "titulo": "Alta del modulo sintetico B",
+    "carpeta": "00 Preparacion de fixture",
+    "metodo": "POST",
+    "ruta": "/api/v1/modules",
+    "identidad": "tokenAdmin",
+    "espera": 201
+  },
+  {
+    "id": "P04",
+    "titulo": "Alta del modulo sintetico C",
+    "carpeta": "00 Preparacion de fixture",
+    "metodo": "POST",
+    "ruta": "/api/v1/modules",
+    "identidad": "tokenAdmin",
+    "espera": 201
+  },
+  {
+    "id": "P05",
+    "titulo": "Token de maquina de A",
+    "carpeta": "00 Preparacion de fixture",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/module-token",
+    "identidad": "sin token",
+    "espera": 200
+  },
+  {
+    "id": "P06",
+    "titulo": "Token de maquina de B",
+    "carpeta": "00 Preparacion de fixture",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/module-token",
+    "identidad": "sin token",
+    "espera": 200
+  },
+  {
+    "id": "P07",
+    "titulo": "Token de maquina de C",
+    "carpeta": "00 Preparacion de fixture",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/module-token",
+    "identidad": "sin token",
+    "espera": 200
+  },
+  {
+    "id": "P08",
+    "titulo": "Admin crea la cuenta humana de A",
+    "carpeta": "00 Preparacion de fixture",
+    "metodo": "POST",
+    "ruta": "/api/v1/users",
+    "identidad": "tokenAdmin",
+    "espera": 201
+  },
+  {
+    "id": "P09",
+    "titulo": "Login de la cuenta humana de A",
+    "carpeta": "00 Preparacion de fixture",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/login",
+    "identidad": "sin token",
+    "espera": 200
+  },
+  {
+    "id": "AUTH-01",
+    "titulo": "Contrasena incorrecta",
+    "carpeta": "01 Autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/login",
+    "identidad": "sin token",
+    "espera": 401
+  },
+  {
+    "id": "AUTH-02",
+    "titulo": "Login sin contrasena",
+    "carpeta": "01 Autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/login",
+    "identidad": "sin token",
+    "espera": 422
+  },
+  {
+    "id": "AUTH-03",
+    "titulo": "Email con formato invalido",
+    "carpeta": "01 Autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/login",
+    "identidad": "sin token",
+    "espera": 422
+  },
+  {
+    "id": "AUTH-04",
+    "titulo": "Secret de modulo incorrecto",
+    "carpeta": "01 Autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/module-token",
+    "identidad": "sin token",
+    "espera": 401
+  },
+  {
+    "id": "AUTH-05",
+    "titulo": "Modulo inexistente responde igual que secret incorrecto",
+    "carpeta": "01 Autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/module-token",
+    "identidad": "sin token",
+    "espera": 401
+  },
+  {
+    "id": "AUTH-06",
+    "titulo": "Me como admin",
+    "carpeta": "01 Autenticacion",
+    "metodo": "GET",
+    "ruta": "/api/v1/auth/me",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "AUTH-07",
+    "titulo": "Me con token de maquina",
+    "carpeta": "01 Autenticacion",
+    "metodo": "GET",
+    "ruta": "/api/v1/auth/me",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "AUTH-08",
+    "titulo": "Me con token de persona",
+    "carpeta": "01 Autenticacion",
+    "metodo": "GET",
+    "ruta": "/api/v1/auth/me",
+    "identidad": "tokenUserA",
+    "espera": 200
+  },
+  {
+    "id": "AUTH-09",
+    "titulo": "Me sin token",
+    "carpeta": "01 Autenticacion",
+    "metodo": "GET",
+    "ruta": "/api/v1/auth/me",
+    "identidad": "sin token",
+    "espera": 401
+  },
+  {
+    "id": "AUTH-10",
+    "titulo": "Me con token mal formado",
+    "carpeta": "01 Autenticacion",
+    "metodo": "GET",
+    "ruta": "/api/v1/auth/me",
+    "identidad": "\"abc.def.ghi\"",
+    "espera": 401
+  },
+  {
+    "id": "AUTH-11",
+    "titulo": "Admin rota el secret de B",
+    "carpeta": "01 Autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/modules/{module_name}/rotate-secret",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "AUTH-12",
+    "titulo": "El secret anterior de B ya no emite tokens",
+    "carpeta": "01 Autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/module-token",
+    "identidad": "sin token",
+    "espera": 401
+  },
+  {
+    "id": "AUTH-13",
+    "titulo": "El secret nuevo de B emite token",
+    "carpeta": "01 Autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/module-token",
+    "identidad": "sin token",
+    "espera": 200
+  },
+  {
+    "id": "AUTH-14",
+    "titulo": "OBSERVACION: un JWT emitido antes de rotar sigue valido hasta vencer",
+    "carpeta": "01 Autenticacion",
+    "metodo": "GET",
+    "ruta": "/api/v1/auth/me",
+    "identidad": "tokenBPrevio",
+    "espera": 200
+  },
+  {
+    "id": "AUTH-15",
+    "titulo": "Un modulo comun no rota secrets",
+    "carpeta": "01 Autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/modules/{module_name}/rotate-secret",
+    "identidad": "tokenA",
+    "espera": 403
+  },
+  {
+    "id": "AUTH-16",
+    "titulo": "Pedir token de modulo sin secret",
+    "carpeta": "01 Autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/module-token",
+    "identidad": "sin token",
+    "espera": 422
+  },
+  {
+    "id": "MOD-01",
+    "titulo": "Un modulo comun lista los modulos",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "GET",
+    "ruta": "/api/v1/modules",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "MOD-02",
+    "titulo": "Un modulo comun no puede dar de alta modulos",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "POST",
+    "ruta": "/api/v1/modules",
+    "identidad": "tokenA",
+    "espera": 403
+  },
+  {
+    "id": "MOD-03",
+    "titulo": "Nombre de modulo repetido",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "POST",
+    "ruta": "/api/v1/modules",
+    "identidad": "tokenAdmin",
+    "espera": 409
+  },
+  {
+    "id": "MOD-04",
+    "titulo": "Nombre de modulo demasiado corto",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "POST",
+    "ruta": "/api/v1/modules",
+    "identidad": "tokenAdmin",
+    "espera": 422
+  },
+  {
+    "id": "MOD-05",
+    "titulo": "B no puede editar el modulo A",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/modules/{module_name}",
+    "identidad": "tokenB",
+    "espera": 403
+  },
+  {
+    "id": "MOD-06",
+    "titulo": "Editar un modulo inexistente",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/modules/{module_name}",
+    "identidad": "tokenAdmin",
+    "espera": 404
+  },
+  {
+    "id": "MOD-07",
+    "titulo": "Admin edita el nombre visible de C",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/modules/{module_name}",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "USR-01",
+    "titulo": "Una persona solo ve las cuentas de su modulo",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "GET",
+    "ruta": "/api/v1/users",
+    "identidad": "tokenUserA",
+    "espera": 200
+  },
+  {
+    "id": "USR-02",
+    "titulo": "A no puede crear cuentas en B",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "POST",
+    "ruta": "/api/v1/users",
+    "identidad": "tokenUserA",
+    "espera": 403
+  },
+  {
+    "id": "USR-03",
+    "titulo": "Contrasena solo con letras",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "POST",
+    "ruta": "/api/v1/users",
+    "identidad": "tokenUserA",
+    "espera": 422
+  },
+  {
+    "id": "USR-04",
+    "titulo": "Contrasena de menos de 8 caracteres",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "POST",
+    "ruta": "/api/v1/users",
+    "identidad": "tokenUserA",
+    "espera": 422
+  },
+  {
+    "id": "USR-05",
+    "titulo": "Email repetido",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "POST",
+    "ruta": "/api/v1/users",
+    "identidad": "tokenAdmin",
+    "espera": 409
+  },
+  {
+    "id": "USR-06",
+    "titulo": "A crea una segunda cuenta en su modulo",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "POST",
+    "ruta": "/api/v1/users",
+    "identidad": "tokenUserA",
+    "espera": 201
+  },
+  {
+    "id": "USR-07",
+    "titulo": "B no puede editar una cuenta de A",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/users/{user_id}",
+    "identidad": "tokenB",
+    "espera": 403
+  },
+  {
+    "id": "USR-08",
+    "titulo": "Editar una cuenta inexistente",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/users/{user_id}",
+    "identidad": "tokenAdmin",
+    "espera": 404
+  },
+  {
+    "id": "USR-15",
+    "titulo": "A edita el nombre de su segunda cuenta",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/users/{user_id}",
+    "identidad": "tokenUserA",
+    "espera": 200
+  },
+  {
+    "id": "USR-09",
+    "titulo": "A cambia la contrasena de su segunda cuenta",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "PUT",
+    "ruta": "/api/v1/users/{user_id}/password",
+    "identidad": "tokenUserA",
+    "espera": 200
+  },
+  {
+    "id": "USR-10",
+    "titulo": "Login con la contrasena nueva",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/login",
+    "identidad": "sin token",
+    "espera": 200
+  },
+  {
+    "id": "USR-11",
+    "titulo": "Login con la contrasena anterior",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/login",
+    "identidad": "sin token",
+    "espera": 401
+  },
+  {
+    "id": "USR-12",
+    "titulo": "A borra su segunda cuenta",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "DELETE",
+    "ruta": "/api/v1/users/{user_id}",
+    "identidad": "tokenUserA",
+    "espera": 204
+  },
+  {
+    "id": "USR-13",
+    "titulo": "No se puede borrar la unica cuenta activa del modulo",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "DELETE",
+    "ruta": "/api/v1/users/{user_id}",
+    "identidad": "tokenUserA",
+    "espera": 409
+  },
+  {
+    "id": "USR-14",
+    "titulo": "Id de cuenta que no es UUID",
+    "carpeta": "02 Modulos y usuarios",
+    "metodo": "DELETE",
+    "ruta": "/api/v1/users/{user_id}",
+    "identidad": "tokenAdmin",
+    "espera": 422
+  },
+  {
+    "id": "ET-01",
+    "titulo": "A declara su tipo con schema",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "POST",
+    "ruta": "/api/v1/event-types",
+    "identidad": "tokenA",
+    "espera": 201
+  },
+  {
+    "id": "ET-02",
+    "titulo": "Redeclarar el mismo tipo es idempotente",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "POST",
+    "ruta": "/api/v1/event-types",
+    "identidad": "tokenA",
+    "espera": 201
+  },
+  {
+    "id": "ET-03",
+    "titulo": "B no puede adueniarse del tipo de A",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "POST",
+    "ruta": "/api/v1/event-types",
+    "identidad": "tokenB",
+    "espera": 403
+  },
+  {
+    "id": "ET-04",
+    "titulo": "B no puede declarar un tipo a nombre de A",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "POST",
+    "ruta": "/api/v1/event-types",
+    "identidad": "tokenB",
+    "espera": 403
+  },
+  {
+    "id": "ET-05",
+    "titulo": "B no puede cambiar el schema del tipo de A",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "PUT",
+    "ruta": "/api/v1/event-types/{name}/schema",
+    "identidad": "tokenB",
+    "espera": 403
+  },
+  {
+    "id": "ET-06",
+    "titulo": "A actualiza su schema sin If-Match (compatibilidad)",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "PUT",
+    "ruta": "/api/v1/event-types/{name}/schema",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "ET-14",
+    "titulo": "El tipo devuelve un ETag fuerte",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "GET",
+    "ruta": "/api/v1/event-types/{name}",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "ET-15",
+    "titulo": "PUT con If-Match vigente aplica y devuelve un ETag nuevo",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "PUT",
+    "ruta": "/api/v1/event-types/{name}/schema",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "ET-16",
+    "titulo": "PUT con If-Match desactualizado",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "PUT",
+    "ruta": "/api/v1/event-types/{name}/schema",
+    "identidad": "tokenA",
+    "espera": 412
+  },
+  {
+    "id": "ET-17",
+    "titulo": "El 412 no aplico el cambio",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "GET",
+    "ruta": "/api/v1/event-types/{name}",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "ET-18",
+    "titulo": "Un modulo ajeno recibe 403 aunque su If-Match sea vigente",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "PUT",
+    "ruta": "/api/v1/event-types/{name}/schema",
+    "identidad": "tokenB",
+    "espera": 403
+  },
+  {
+    "id": "ET-19",
+    "titulo": "Un ETag debil nunca coincide",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "PUT",
+    "ruta": "/api/v1/event-types/{name}/schema",
+    "identidad": "tokenA",
+    "espera": 412
+  },
+  {
+    "id": "ET-20",
+    "titulo": "If-Match * restaura el schema original",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "PUT",
+    "ruta": "/api/v1/event-types/{name}/schema",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "ET-07",
+    "titulo": "Schema que no es JSON Schema valido",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "POST",
+    "ruta": "/api/v1/event-types",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "ET-08",
+    "titulo": "C consulta el tipo de A",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "GET",
+    "ruta": "/api/v1/event-types/{name}",
+    "identidad": "tokenC",
+    "espera": 200
+  },
+  {
+    "id": "ET-09",
+    "titulo": "Tipo inexistente",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "GET",
+    "ruta": "/api/v1/event-types/{name}",
+    "identidad": "tokenA",
+    "espera": 404
+  },
+  {
+    "id": "ET-10",
+    "titulo": "Filtrar tipos por duenio",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "GET",
+    "ruta": "/api/v1/event-types",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "ET-11",
+    "titulo": "Pagina de tamanio 0",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "GET",
+    "ruta": "/api/v1/event-types",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "ET-12",
+    "titulo": "Pagina mayor al maximo (200)",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "GET",
+    "ruta": "/api/v1/event-types",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "ET-13",
+    "titulo": "Mapa de tipos",
+    "carpeta": "03 Tipos de evento",
+    "metodo": "GET",
+    "ruta": "/api/v1/event-types/map",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "PUB-01",
+    "titulo": "A declara que publica su tipo",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/publications",
+    "identidad": "tokenA",
+    "espera": 201
+  },
+  {
+    "id": "PUB-02",
+    "titulo": "Redeclarar la publicacion es idempotente",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/publications",
+    "identidad": "tokenA",
+    "espera": 201
+  },
+  {
+    "id": "PUB-03",
+    "titulo": "B no puede declarar publicaciones de A",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/publications",
+    "identidad": "tokenB",
+    "espera": 403
+  },
+  {
+    "id": "PUB-04",
+    "titulo": "Listar publicaciones",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "GET",
+    "ruta": "/api/v1/publications",
+    "identidad": "tokenC",
+    "espera": 200
+  },
+  {
+    "id": "PUB-05",
+    "titulo": "B no puede borrar la publicacion de A",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "DELETE",
+    "ruta": "/api/v1/publications/{publication_id}",
+    "identidad": "tokenB",
+    "espera": 403
+  },
+  {
+    "id": "PUB-06",
+    "titulo": "A borra su publicacion",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "DELETE",
+    "ruta": "/api/v1/publications/{publication_id}",
+    "identidad": "tokenA",
+    "espera": 204
+  },
+  {
+    "id": "PUB-07",
+    "titulo": "Borrarla otra vez",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "DELETE",
+    "ruta": "/api/v1/publications/{publication_id}",
+    "identidad": "tokenA",
+    "espera": 404
+  },
+  {
+    "id": "PUB-08",
+    "titulo": "A la vuelve a declarar",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/publications",
+    "identidad": "tokenA",
+    "espera": 201
+  },
+  {
+    "id": "SUB-01",
+    "titulo": "B se suscribe con maxAttempts 4",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/subscriptions",
+    "identidad": "tokenB",
+    "espera": 201
+  },
+  {
+    "id": "SUB-02",
+    "titulo": "Resuscribirse es idempotente",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/subscriptions",
+    "identidad": "tokenB",
+    "espera": 201
+  },
+  {
+    "id": "SUB-03",
+    "titulo": "maxAttempts 0",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/subscriptions",
+    "identidad": "tokenB",
+    "espera": 422
+  },
+  {
+    "id": "SUB-04",
+    "titulo": "maxAttempts 11",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/subscriptions",
+    "identidad": "tokenB",
+    "espera": 422
+  },
+  {
+    "id": "SUB-05",
+    "titulo": "C no puede suscribir a B",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/subscriptions",
+    "identidad": "tokenC",
+    "espera": 403
+  },
+  {
+    "id": "SUB-06",
+    "titulo": "C no puede pausar la suscripcion de B",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/subscriptions/{subscription_id}/toggle",
+    "identidad": "tokenC",
+    "espera": 403
+  },
+  {
+    "id": "SUB-07",
+    "titulo": "Pausar sin indicar active",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/subscriptions/{subscription_id}/toggle",
+    "identidad": "tokenB",
+    "espera": 422
+  },
+  {
+    "id": "SUB-08",
+    "titulo": "B pausa su suscripcion",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/subscriptions/{subscription_id}/toggle",
+    "identidad": "tokenB",
+    "espera": 200
+  },
+  {
+    "id": "SUB-09",
+    "titulo": "B la reactiva",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/subscriptions/{subscription_id}/toggle",
+    "identidad": "tokenB",
+    "espera": 200
+  },
+  {
+    "id": "SUB-10",
+    "titulo": "B ve solo sus suscripciones",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "GET",
+    "ruta": "/api/v1/subscriptions",
+    "identidad": "tokenB",
+    "espera": 200
+  },
+  {
+    "id": "SUB-11",
+    "titulo": "C se suscribe",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/subscriptions",
+    "identidad": "tokenC",
+    "espera": 201
+  },
+  {
+    "id": "SUB-12",
+    "titulo": "B no puede borrar la suscripcion de C",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "DELETE",
+    "ruta": "/api/v1/subscriptions/{subscription_id}",
+    "identidad": "tokenB",
+    "espera": 403
+  },
+  {
+    "id": "SUB-13",
+    "titulo": "C borra su suscripcion",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "DELETE",
+    "ruta": "/api/v1/subscriptions/{subscription_id}",
+    "identidad": "tokenC",
+    "espera": 204
+  },
+  {
+    "id": "SUB-14",
+    "titulo": "Borrarla otra vez",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "DELETE",
+    "ruta": "/api/v1/subscriptions/{subscription_id}",
+    "identidad": "tokenC",
+    "espera": 404
+  },
+  {
+    "id": "TOP-01",
+    "titulo": "Topologia planificada",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "GET",
+    "ruta": "/api/v1/topology",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "TOP-02",
+    "titulo": "Un modulo comun no aplica la topologia",
+    "carpeta": "04 Publicaciones y suscripciones",
+    "metodo": "POST",
+    "ruta": "/api/v1/topology/apply",
+    "identidad": "tokenA",
+    "espera": 403
+  },
+  {
+    "id": "EV-01",
+    "titulo": "A publica un evento valido",
+    "carpeta": "05 Eventos",
+    "metodo": "POST",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 202
+  },
+  {
+    "id": "EV-02",
+    "titulo": "Reenvio del mismo eventId",
+    "carpeta": "05 Eventos",
+    "metodo": "POST",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "EV-03",
+    "titulo": "A ve el detalle con una sola entrega a B",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events/{event_id}",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "EV-04",
+    "titulo": "B (destino) ve el evento",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events/{event_id}",
+    "identidad": "tokenB",
+    "espera": 200
+  },
+  {
+    "id": "EV-05",
+    "titulo": "C (ajeno) no ve el evento",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events/{event_id}",
+    "identidad": "tokenC",
+    "espera": 404
+  },
+  {
+    "id": "EV-06",
+    "titulo": "A no puede publicar a nombre de B",
+    "carpeta": "05 Eventos",
+    "metodo": "POST",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 403
+  },
+  {
+    "id": "EV-07",
+    "titulo": "occurredAt sin zona horaria",
+    "carpeta": "05 Eventos",
+    "metodo": "POST",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "EV-08",
+    "titulo": "El sobre rechazado no se persiste",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events/{event_id}",
+    "identidad": "tokenAdmin",
+    "espera": 404
+  },
+  {
+    "id": "EV-09",
+    "titulo": "Campo extra en el sobre",
+    "carpeta": "05 Eventos",
+    "metodo": "POST",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "EV-10",
+    "titulo": "eventId que no es UUID",
+    "carpeta": "05 Eventos",
+    "metodo": "POST",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "EV-11",
+    "titulo": "Sobre sin sourceModule",
+    "carpeta": "05 Eventos",
+    "metodo": "POST",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "EV-12",
+    "titulo": "data que no cumple el schema del tipo",
+    "carpeta": "05 Eventos",
+    "metodo": "POST",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "EV-13",
+    "titulo": "El rechazo por schema si queda persistido",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events/{event_id}",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "EV-25",
+    "titulo": "Segundo data invalido (para el reintento en lote)",
+    "carpeta": "05 Eventos",
+    "metodo": "POST",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "EV-14",
+    "titulo": "Tipo no declarado se acepta y se registra solo",
+    "carpeta": "05 Eventos",
+    "metodo": "POST",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 202
+  },
+  {
+    "id": "EV-15",
+    "titulo": "El tipo descubierto queda marcado",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/event-types/{name}",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "EV-16",
+    "titulo": "A lista los eventos de su tipo",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "EV-17",
+    "titulo": "C no ve eventos de ese tipo",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenC",
+    "espera": 200
+  },
+  {
+    "id": "EV-18",
+    "titulo": "C no puede ampliar su alcance con filtros",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenC",
+    "espera": 200
+  },
+  {
+    "id": "EV-19",
+    "titulo": "Pagina mayor al maximo",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "EV-20",
+    "titulo": "Recorrido por correlationId",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events/journey/{correlation_id}",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "EV-24",
+    "titulo": "C no ve el recorrido ajeno",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events/journey/{correlation_id}",
+    "identidad": "tokenC",
+    "espera": 200
+  },
+  {
+    "id": "EV-21",
+    "titulo": "Schema del sobre es publico",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/events-meta/envelope-schema",
+    "identidad": "sin token",
+    "espera": 200
+  },
+  {
+    "id": "EV-22",
+    "titulo": "B ve su entrega",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/deliveries",
+    "identidad": "tokenB",
+    "espera": 200
+  },
+  {
+    "id": "EV-23",
+    "titulo": "C no ve entregas ajenas",
+    "carpeta": "05 Eventos",
+    "metodo": "GET",
+    "ruta": "/api/v1/deliveries",
+    "identidad": "tokenC",
+    "espera": 200
+  },
+  {
+    "id": "DLQ-01",
+    "titulo": "A ve la dead letter de su rechazo",
+    "carpeta": "06 DLQ",
+    "metodo": "GET",
+    "ruta": "/api/v1/dlq",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "DLQ-02",
+    "titulo": "C no ve esa dead letter en el listado",
+    "carpeta": "06 DLQ",
+    "metodo": "GET",
+    "ruta": "/api/v1/dlq",
+    "identidad": "tokenC",
+    "espera": 200
+  },
+  {
+    "id": "DLQ-03",
+    "titulo": "C no ve el detalle",
+    "carpeta": "06 DLQ",
+    "metodo": "GET",
+    "ruta": "/api/v1/dlq/{dead_letter_id}",
+    "identidad": "tokenC",
+    "espera": 404
+  },
+  {
+    "id": "DLQ-04",
+    "titulo": "A ve el detalle",
+    "carpeta": "06 DLQ",
+    "metodo": "GET",
+    "ruta": "/api/v1/dlq/{dead_letter_id}",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "DLQ-05",
+    "titulo": "C (ajeno) no reintenta: 404",
+    "carpeta": "06 DLQ",
+    "metodo": "POST",
+    "ruta": "/api/v1/dlq/{dead_letter_id}/retry",
+    "identidad": "tokenC",
+    "espera": 404
+  },
+  {
+    "id": "DLQ-20",
+    "titulo": "A (origen) reintenta; el data sigue invalido",
+    "carpeta": "06 DLQ",
+    "metodo": "POST",
+    "ruta": "/api/v1/dlq/{dead_letter_id}/retry",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "DLQ-06",
+    "titulo": "Un modulo comun no reintenta en lote",
+    "carpeta": "06 DLQ",
+    "metodo": "POST",
+    "ruta": "/api/v1/dlq/retry-bulk",
+    "identidad": "tokenA",
+    "espera": 403
+  },
+  {
+    "id": "DLQ-07",
+    "titulo": "Reintento en lote vacio",
+    "carpeta": "06 DLQ",
+    "metodo": "POST",
+    "ruta": "/api/v1/dlq/retry-bulk",
+    "identidad": "tokenAdmin",
+    "espera": 422
+  },
+  {
+    "id": "DLQ-08",
+    "titulo": "Descartar con motivo demasiado corto",
+    "carpeta": "06 DLQ",
+    "metodo": "POST",
+    "ruta": "/api/v1/dlq/{dead_letter_id}/discard",
+    "identidad": "tokenAdmin",
+    "espera": 422
+  },
+  {
+    "id": "DLQ-09",
+    "titulo": "Admin descarta con motivo",
+    "carpeta": "06 DLQ",
+    "metodo": "POST",
+    "ruta": "/api/v1/dlq/{dead_letter_id}/discard",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "DLQ-15",
+    "titulo": "Reintentar una dead letter descartada",
+    "carpeta": "06 DLQ",
+    "metodo": "POST",
+    "ruta": "/api/v1/dlq/{dead_letter_id}/retry",
+    "identidad": "tokenAdmin",
+    "espera": 409
+  },
+  {
+    "id": "DLQ-10",
+    "titulo": "Auditoria de la dead letter",
+    "carpeta": "06 DLQ",
+    "metodo": "GET",
+    "ruta": "/api/v1/dlq/{dead_letter_id}/audit",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "DLQ-13",
+    "titulo": "C no ve la auditoria de una dead letter ajena (DEF-10)",
+    "carpeta": "06 DLQ",
+    "metodo": "GET",
+    "ruta": "/api/v1/dlq/{dead_letter_id}/audit",
+    "identidad": "tokenC",
+    "espera": 404
+  },
+  {
+    "id": "DLQ-14",
+    "titulo": "Auditoria de una dead letter inexistente",
+    "carpeta": "06 DLQ",
+    "metodo": "GET",
+    "ruta": "/api/v1/dlq/{dead_letter_id}/audit",
+    "identidad": "tokenAdmin",
+    "espera": 404
+  },
+  {
+    "id": "DLQ-16",
+    "titulo": "A relaja su schema para corregir la causa",
+    "carpeta": "06 DLQ",
+    "metodo": "PUT",
+    "ruta": "/api/v1/event-types/{name}/schema",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "DLQ-17",
+    "titulo": "Admin reintenta en lote",
+    "carpeta": "06 DLQ",
+    "metodo": "POST",
+    "ruta": "/api/v1/dlq/retry-bulk",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "DLQ-18",
+    "titulo": "El evento reprocesado se entrega a B",
+    "carpeta": "06 DLQ",
+    "metodo": "GET",
+    "ruta": "/api/v1/events/{event_id}",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "DLQ-19",
+    "titulo": "A restaura su schema",
+    "carpeta": "06 DLQ",
+    "metodo": "PUT",
+    "ruta": "/api/v1/event-types/{name}/schema",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "DLQ-11",
+    "titulo": "Un modulo comun no procesa reintentos vencidos",
+    "carpeta": "06 DLQ",
+    "metodo": "POST",
+    "ruta": "/api/v1/deliveries/process-due-retries",
+    "identidad": "tokenA",
+    "espera": 403
+  },
+  {
+    "id": "DLQ-12",
+    "titulo": "Admin procesa reintentos vencidos",
+    "carpeta": "06 DLQ",
+    "metodo": "POST",
+    "ruta": "/api/v1/deliveries/process-due-retries",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "DSH-01",
+    "titulo": "Tablero propio de A",
+    "carpeta": "07 Dashboard",
+    "metodo": "GET",
+    "ruta": "/api/v1/dashboard",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "DSH-02",
+    "titulo": "A no ve el tablero de B",
+    "carpeta": "07 Dashboard",
+    "metodo": "GET",
+    "ruta": "/api/v1/dashboard/modules/{module_name}",
+    "identidad": "tokenA",
+    "espera": 403
+  },
+  {
+    "id": "DSH-03",
+    "titulo": "A ve su tablero por nombre",
+    "carpeta": "07 Dashboard",
+    "metodo": "GET",
+    "ruta": "/api/v1/dashboard/modules/{module_name}",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "DSH-04",
+    "titulo": "Un modulo comun no ve el global",
+    "carpeta": "07 Dashboard",
+    "metodo": "GET",
+    "ruta": "/api/v1/dashboard/global",
+    "identidad": "tokenA",
+    "espera": 403
+  },
+  {
+    "id": "DSH-05",
+    "titulo": "Admin ve el global",
+    "carpeta": "07 Dashboard",
+    "metodo": "GET",
+    "ruta": "/api/v1/dashboard/global",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "DSH-06",
+    "titulo": "windowHours 0",
+    "carpeta": "07 Dashboard",
+    "metodo": "GET",
+    "ruta": "/api/v1/dashboard",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "DSH-07",
+    "titulo": "windowHours 721",
+    "carpeta": "07 Dashboard",
+    "metodo": "GET",
+    "ruta": "/api/v1/dashboard",
+    "identidad": "tokenA",
+    "espera": 422
+  },
+  {
+    "id": "DSH-08",
+    "titulo": "Alertas de integracion",
+    "carpeta": "07 Dashboard",
+    "metodo": "GET",
+    "ruta": "/api/v1/dashboard/integration-alerts",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "CAT-01",
+    "titulo": "Zonas: las 15 comunas",
+    "carpeta": "08 Catalogos",
+    "metodo": "GET",
+    "ruta": "/api/v1/catalogos/zonas",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "CAT-02",
+    "titulo": "Barrios activos de CABA",
+    "carpeta": "08 Catalogos",
+    "metodo": "GET",
+    "ruta": "/api/v1/catalogos/barrios",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "CAT-03",
+    "titulo": "Palermo pertenece a la comuna 14",
+    "carpeta": "08 Catalogos",
+    "metodo": "GET",
+    "ruta": "/api/v1/catalogos/barrios/{codigo}",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "CAT-04",
+    "titulo": "Barrios de la comuna 4",
+    "carpeta": "08 Catalogos",
+    "metodo": "GET",
+    "ruta": "/api/v1/catalogos/barrios",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "CAT-05",
+    "titulo": "Barrio inexistente",
+    "carpeta": "08 Catalogos",
+    "metodo": "GET",
+    "ruta": "/api/v1/catalogos/barrios/{codigo}",
+    "identidad": "tokenA",
+    "espera": 404
+  },
+  {
+    "id": "CAT-06",
+    "titulo": "Un modulo comun no crea zonas",
+    "carpeta": "08 Catalogos",
+    "metodo": "POST",
+    "ruta": "/api/v1/catalogos/zonas",
+    "identidad": "tokenA",
+    "espera": 403
+  },
+  {
+    "id": "CAT-07",
+    "titulo": "Admin crea una zona sintetica",
+    "carpeta": "08 Catalogos",
+    "metodo": "POST",
+    "ruta": "/api/v1/catalogos/zonas",
+    "identidad": "tokenAdmin",
+    "espera": 201
+  },
+  {
+    "id": "CAT-08",
+    "titulo": "Codigo de zona repetido",
+    "carpeta": "08 Catalogos",
+    "metodo": "POST",
+    "ruta": "/api/v1/catalogos/zonas",
+    "identidad": "tokenAdmin",
+    "espera": 409
+  },
+  {
+    "id": "CAT-14",
+    "titulo": "Un modulo comun no crea barrios",
+    "carpeta": "08 Catalogos",
+    "metodo": "POST",
+    "ruta": "/api/v1/catalogos/barrios",
+    "identidad": "tokenA",
+    "espera": 403
+  },
+  {
+    "id": "CAT-15",
+    "titulo": "Admin crea un barrio sintetico en su zona",
+    "carpeta": "08 Catalogos",
+    "metodo": "POST",
+    "ruta": "/api/v1/catalogos/barrios",
+    "identidad": "tokenAdmin",
+    "espera": 201
+  },
+  {
+    "id": "CAT-16",
+    "titulo": "Barrio con zona inexistente",
+    "carpeta": "08 Catalogos",
+    "metodo": "POST",
+    "ruta": "/api/v1/catalogos/barrios",
+    "identidad": "tokenAdmin",
+    "espera": 404
+  },
+  {
+    "id": "CAT-17",
+    "titulo": "Admin da de baja el barrio sintetico",
+    "carpeta": "08 Catalogos",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/catalogos/barrios/{codigo}",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "CAT-09",
+    "titulo": "Admin da de baja la zona sintetica",
+    "carpeta": "08 Catalogos",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/catalogos/zonas/{codigo}",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "CAT-10",
+    "titulo": "Catalogos genericos",
+    "carpeta": "08 Catalogos",
+    "metodo": "GET",
+    "ruta": "/api/v1/catalogos",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "CAT-11",
+    "titulo": "Items de un catalogo",
+    "carpeta": "08 Catalogos",
+    "metodo": "GET",
+    "ruta": "/api/v1/catalogos/{catalogo}/items",
+    "identidad": "tokenA",
+    "espera": 200
+  },
+  {
+    "id": "CAT-12",
+    "titulo": "Un modulo comun no crea items",
+    "carpeta": "08 Catalogos",
+    "metodo": "POST",
+    "ruta": "/api/v1/catalogos/{catalogo}/items",
+    "identidad": "tokenA",
+    "espera": 403
+  },
+  {
+    "id": "CAT-18",
+    "titulo": "Admin agrega un item sintetico",
+    "carpeta": "08 Catalogos",
+    "metodo": "POST",
+    "ruta": "/api/v1/catalogos/{catalogo}/items",
+    "identidad": "tokenAdmin",
+    "espera": 201
+  },
+  {
+    "id": "CAT-19",
+    "titulo": "Admin da de baja el item sintetico",
+    "carpeta": "08 Catalogos",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/catalogos/{catalogo}/items/{codigo}",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "CAT-20",
+    "titulo": "Editar un item inexistente",
+    "carpeta": "08 Catalogos",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/catalogos/{catalogo}/items/{codigo}",
+    "identidad": "tokenAdmin",
+    "espera": 404
+  },
+  {
+    "id": "CAT-13",
+    "titulo": "Catalogos sin token",
+    "carpeta": "08 Catalogos",
+    "metodo": "GET",
+    "ruta": "/api/v1/catalogos/zonas",
+    "identidad": "sin token",
+    "espera": 401
+  },
+  {
+    "id": "SAL-01",
+    "titulo": "Liveness",
+    "carpeta": "09 Salud",
+    "metodo": "GET",
+    "ruta": "/health/live",
+    "identidad": "sin token",
+    "espera": 200
+  },
+  {
+    "id": "SAL-02",
+    "titulo": "Readiness con base y broker",
+    "carpeta": "09 Salud",
+    "metodo": "GET",
+    "ruta": "/health/ready",
+    "identidad": "sin token",
+    "espera": 200
+  },
+  {
+    "id": "RL-01",
+    "titulo": "Diez intentos por identidad y endpoint; el undecimo es 429",
+    "carpeta": "10 Limite de autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/login",
+    "identidad": "sin token",
+    "espera": 401
+  },
+  {
+    "id": "RL-02",
+    "titulo": "Intento 11 de la misma identidad",
+    "carpeta": "10 Limite de autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/login",
+    "identidad": "sin token",
+    "espera": 429
+  },
+  {
+    "id": "RL-03",
+    "titulo": "Otra identidad no queda bloqueada",
+    "carpeta": "10 Limite de autenticacion",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/login",
+    "identidad": "sin token",
+    "espera": 401
+  },
+  {
+    "id": "CLN-01",
+    "titulo": "Desactivar el modulo A",
+    "carpeta": "99 Limpieza",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/modules/{module_name}",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "CLN-02",
+    "titulo": "Desactivar el modulo B",
+    "carpeta": "99 Limpieza",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/modules/{module_name}",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "CLN-03",
+    "titulo": "Desactivar el modulo C",
+    "carpeta": "99 Limpieza",
+    "metodo": "PATCH",
+    "ruta": "/api/v1/modules/{module_name}",
+    "identidad": "tokenAdmin",
+    "espera": 200
+  },
+  {
+    "id": "CLN-04",
+    "titulo": "Un modulo desactivado no obtiene tokens nuevos",
+    "carpeta": "99 Limpieza",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/module-token",
+    "identidad": "sin token",
+    "espera": 403
+  },
+  {
+    "id": "CLN-05",
+    "titulo": "Su cuenta humana tampoco entra",
+    "carpeta": "99 Limpieza",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/login",
+    "identidad": "sin token",
+    "espera": 403
+  },
+  {
+    "id": "CLN-06",
+    "titulo": "OBSERVACION: el JWT ya emitido de A sigue valido hasta vencer",
+    "carpeta": "99 Limpieza",
+    "metodo": "GET",
+    "ruta": "/api/v1/auth/me",
+    "identidad": "tokenA",
+    "espera": 200
+  }
+]

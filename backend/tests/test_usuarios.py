@@ -204,3 +204,20 @@ async def test_la_cuenta_inicial_del_seed_usa_la_contrasena_conocida(client):
     )
     assert login.status_code == 200
     assert login.json()["isAdmin"] is True
+
+
+async def test_me_devuelve_id_en_token_de_persona_y_null_en_token_de_modulo(
+    client, auth, machine_auth
+):
+    obras_user = await auth("obras")
+    cuentas = (await client.get("/api/v1/users", headers=obras_user)).json()
+    me_user = (await client.get("/api/v1/auth/me", headers=obras_user)).json()
+    assert me_user["kind"] == "user"
+    assert me_user["id"] == cuentas[0]["id"]
+    assert me_user["email"] == "obras@munitest.com"
+
+    obras_machine = await machine_auth("obras")
+    me_machine = (await client.get("/api/v1/auth/me", headers=obras_machine)).json()
+    assert me_machine["kind"] == "module"
+    assert me_machine["id"] is None
+    assert me_machine["email"] is None

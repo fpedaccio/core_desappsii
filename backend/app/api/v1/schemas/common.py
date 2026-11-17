@@ -45,13 +45,45 @@ class PageResponse(CamelModel, Generic[T]):
         )
 
 
-class ErrorResponse(CamelModel):
-    """Forma unica de todos los errores de la API."""
+class ProblemDetails(CamelModel):
+    """Forma unica de todos los errores de la API (RFC 9457 + extensiones del Core)."""
 
-    code: str = Field(examples=["SCHEMA_VIOLATION"])
-    message: str
-    details: list[Any] = Field(default_factory=list)
-    trace_id: str | None = None
+    type: str = Field(examples=["about:blank"])
+    title: str = Field(examples=["Unprocessable Entity"])
+    status: int = Field(examples=[422])
+    detail: str = Field(examples=["La solicitud tiene campos invalidos."])
+    instance: str | None = Field(default=None, examples=["/api/v1/events"])
+    code: str = Field(examples=["VALIDATION_ERROR"])
+    message: str = Field(examples=["La solicitud tiene campos invalidos."])
+    details: list[Any]
+    trace_id: str | None
+
+
+ErrorResponse = ProblemDetails
+
+PROBLEM_DESCRIPTIONS: dict[int, str] = {
+    401: "No autenticado o token invalido/expirado.",
+    403: "Sin permisos para esta operacion, cuenta/modulo inactivo o recurso de otro modulo.",
+    404: "Recurso no encontrado o fuera del alcance del modulo autenticado.",
+    409: "Conflicto con el estado actual o restriccion de unicidad.",
+    412: "Precondicion fallida: el encabezado If-Match no coincide con el ETag actual.",
+    422: "Error de validacion en la solicitud (Problem Details RFC 9457).",
+}
+
+
+def problem_responses(*codes: int) -> dict[int | str, dict[str, Any]]:
+    """Declara respuestas de error Problem Details (application/problem+json) para OpenAPI."""
+    return {
+        code: {
+            "description": PROBLEM_DESCRIPTIONS.get(code, "Error de la API."),
+            "content": {
+                "application/problem+json": {
+                    "schema": {"$ref": "#/components/schemas/ProblemDetails"}
+                }
+            },
+        }
+        for code in codes
+    }
 
 
 class MessageResponse(CamelModel):

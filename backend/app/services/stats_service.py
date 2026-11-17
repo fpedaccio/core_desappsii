@@ -57,9 +57,7 @@ class StatsService:
     async def module_dashboard(self, module_name: str, *, window_hours: int = 24) -> dict[str, Any]:
         """El tablero que ve un equipo cuando entra."""
         since = utcnow() - timedelta(hours=window_hours)
-        module = await self.module_repo.get_by_name(module_name)
-        subscriptions = await self.subscription_repo.list_for_module(module.id) if module else []
-        publications = await self.publication_repo.list_for_module(module.id) if module else []
+        registry = await self.module_repo.dashboard_registry(module_name)
 
         received_by_status = await self.delivery_repo.count_by_status(target_module=module_name)
 
@@ -85,14 +83,8 @@ class StatsService:
                 "open": await self.dead_letter_repo.count_open(module_scope=module_name),
                 "byReason": await self.dead_letter_repo.count_by_reason(module_scope=module_name),
             },
-            "subscriptions": {
-                "total": len(subscriptions),
-                "active": sum(1 for s in subscriptions if s.active),
-                "eventTypes": sorted(s.event_type.name for s in subscriptions if s.active),
-            },
-            "publications": {
-                "declared": sorted(p.event_type.name for p in publications if p.active),
-            },
+            "subscriptions": registry["subscriptions"],
+            "publications": registry["publications"],
             "volumeByHour": await self.event_log_repo.hourly_volume(
                 module_scope=module_name, since=since
             ),

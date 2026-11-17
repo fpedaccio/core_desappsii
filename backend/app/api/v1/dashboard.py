@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from app.api.deps import AdminDep, CallerDep, StatsDep
+from app.api.v1.schemas.common import problem_responses
 from app.api.v1.schemas.dto import (
     GlobalDashboardResponse,
     IntegrationAlert,
@@ -12,7 +13,7 @@ from app.api.v1.schemas.dto import (
 )
 from app.core.errors import ForbiddenError
 
-router = APIRouter(tags=["Dashboard"])
+router = APIRouter(tags=["Dashboard"], responses=problem_responses(401))
 
 
 @router.get(
@@ -37,6 +38,7 @@ async def my_dashboard(
 @router.get(
     "/dashboard/modules/{module_name}",
     response_model=ModuleDashboardResponse,
+    responses=problem_responses(403),
     summary="El tablero de un modulo",
     description=(
         "Un modulo solo puede pedir el propio (para eso esta `/dashboard`). El "
@@ -60,6 +62,7 @@ async def module_dashboard(
 @router.get(
     "/dashboard/global",
     response_model=GlobalDashboardResponse,
+    responses=problem_responses(403),
     summary="El tablero del hub",
     description=(
         "Solo el administrador. El pulso completo del pasamanos: eventos por "

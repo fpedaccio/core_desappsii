@@ -1,5 +1,9 @@
 # Core: preparación guiada del despliegue — 2026-10-12
 
+> Para la instalación aislada de la candidata de testing, usar [TESTING.md](TESTING.md).
+> El procedimiento y las evidencias siguientes corresponden a la preparación histórica;
+> no acreditan por sí solos el arranque actual desde un clon limpio.
+
 Candidato de preparación, NO desplegado. No hay Docker en el entorno del asistente: imágenes, PostgreSQL y RabbitMQ reales todavía no se ejecutaron. No equivale a certificación de producción.
 
 Bases: backend `f119670211a662fe6901518f5181aad3a424e8d7`; frontend `integracion-con-core`, commit `ee292fd46b9eab8eb03c756a08b35ad942409df5`. Cambios en ramas nuevas, sin modificar las ramas existentes.

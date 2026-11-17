@@ -1,0 +1,160 @@
+name: Core API contracts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  api-contracts:
+    name: Core - API collection, contract and AMQP scenarios
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
+      GIT_TERMINAL_PROMPT: "0"
+      TESTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PROJECT: muni-core-testing-api-ci
+      HTTP_PORT: "18084"
+      RUNS: "3"
+
+    steps:
+      - name: Checkout candidate commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install contrast dependency
+        run: python -m pip install "jsonschema>=4.23"
+
+      - name: Start complete stack from empty testing state
+        run: timeout 840s python3 deploy/testing_up.py --project-name "$PROJECT" --port "$HTTP_PORT"
+
+      - name: Verify candidate and fresh startup
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads(Path("deploy/.testing/bootstrap-result.json").read_text())
+          assert result["backend_ref"] == os.environ["TESTED_SHA"], "Unexpected backend revision"
+          assert result["backend_dirty"] is False
+          assert result["fresh_credentials_and_no_previous_volumes"] is True
+          assert result["ready"] is True and result["worker_consumers"] is True
+          print("Fresh stack, exact commit, API and worker verified.")
+          PY
+
+      - name: Export OpenAPI from the running API
+        run: |
+          docker exec "$PROJECT-api-1" python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/openapi.json').read().decode('utf-8'))" > deploy/.testing/openapi-qa.json
+          python3 -c "import json; d = json.load(open('deploy/.testing/openapi-qa.json')); print(d['info']['version'], len(d['paths']))"
+
+      - name: Check the committed collection matches this contract
+        run: |
+          python3 docs/testing/api/generar_coleccion.py deploy/.testing/openapi-qa.json
+          git diff --exit-code -- docs/testing/api/ || {
+            echo "::error::The collection is out of date: regenerate it with generar_coleccion.py"
+            exit 1
+          }
+
+      - name: Run the collection and the AMQP scenarios
+        run: |
+          PASSWORD="$(sed -n 's/^SEED_INITIAL_PASSWORD=//p' deploy/.testing/.env)"
+          echo "::add-mask::$PASSWORD"
+          # The raw newman JSON carries tokens and secrets: it stays in the
+          # private folder and is never uploaded.
+          mkdir -p deploy/.testing/api-private deploy/.testing/api-evidence
+          status=0
+          for run in $(seq 1 "$RUNS"); do
+            echo "::group::Collection run $run"
+            npx --yes newman@6.2.2 run docs/testing/api/core-api.postman_collection.json \
+              -e docs/testing/api/core-local.postman_environment.json \
+              --env-var "rootUrl=http://localhost:$HTTP_PORT" \
+              --env-var "adminPassword=$PASSWORD" \
+              --reporters cli,json \
+              --reporter-json-export "deploy/.testing/api-private/newman-$run.json" \
+              --reporter-cli-no-banner --reporter-cli-no-console \
+              > "deploy/.testing/api-evidence/newman-$run.txt" 2>&1 || status=1
+            tail -n 25 "deploy/.testing/api-evidence/newman-$run.txt"
+            python3 docs/testing/api/contrastar_contrato.py deploy/.testing/openapi-qa.json \
+              "deploy/.testing/api-private/newman-$run.json" \
+              > "deploy/.testing/api-evidence/contraste-$run.md" || status=1
+            echo "::endgroup::"
+
+            # RabbitMQ is not published to the runner: the scenarios run inside
+            # the API container, which is on the Compose network.
+            echo "::group::AMQP scenarios run $run"
+            docker exec -i -e CORE_ADMIN_PASSWORD="$PASSWORD" -e CORE_ROOT_URL=http://127.0.0.1:8000 \
+              "$PROJECT-api-1" sh -c 'CORE_AMQP_URL="$RABBITMQ_URL" python -' \
+              < docs/testing/api/escenarios_amqp.py \
+              > "deploy/.testing/api-evidence/amqp-$run.txt" 2>&1 || status=1
+            cat "deploy/.testing/api-evidence/amqp-$run.txt"
+            echo "::endgroup::"
+          done
+          exit "$status"
+
+      - name: Verify the evidence carries no credentials
+        id: leaks
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          # Only the secret entries: the .env also holds ports, URLs and image
+          # names that legitimately appear in the evidence.
+          secret_keys = {"POSTGRES_PASSWORD", "APP_DB_PASSWORD", "RABBITMQ_PASSWORD", "SEED_INITIAL_PASSWORD"}
+          env = Path("deploy/.testing/.env")
+          secrets = [
+              value.strip().strip('"')
+              for key, _, value in (line.partition("=") for line in (env.read_text().splitlines() if env.exists() else []))
+              if key in secret_keys and value.strip()
+          ]
+          assert len(secrets) == len(secret_keys), "Could not read the secret entries to check against"
+          jwt = re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")
+          leaks = []
+          for path in sorted(Path("deploy/.testing/api-evidence").glob("*")):
+              text = path.read_text(errors="replace")
+              if jwt.search(text) or "-----BEGIN" in text or any(secret in text for secret in secrets):
+                  leaks.append(path.name)
+          assert not leaks, f"Evidence with credentials: {leaks}"
+          print("No credentials in the shareable evidence.")
+          PY
+
+      - name: Upload sanitized evidence
+        # Never publish evidence that failed the credentials check.
+        if: always() && steps.leaks.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-contracts-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            deploy/.testing/api-evidence/
+            deploy/.testing/openapi-qa.json
+            deploy/.testing/bootstrap-result.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Stop runner-local testing stack
+        if: always()
+        run: |
+          if [ -f deploy/.testing/.env ]; then
+            docker compose --project-name "$PROJECT" \
+              --env-file deploy/.testing/.env -f deploy/compose.yaml down
+          fi

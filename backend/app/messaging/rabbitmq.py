@@ -112,6 +112,7 @@ class RabbitMQBroker(Broker):
                 raw=message.body,
                 headers=dict(message.headers or {}),
                 redelivered=bool(message.redelivered),
+                user_id=message.user_id,
             )
             try:
                 await handler(inbound)
