@@ -6,7 +6,7 @@ import testing_up
 
 PROJECT = "muni-core-testing-performance"
 PORT = 18087
-FRONTEND = "d00f07b71aaa61d27adcb179ec5a3180e9e78874"
+FRONTEND = "d7cfdde98be223dc526b5324135d268712fd3fce"
 
 
 
